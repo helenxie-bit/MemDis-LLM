@@ -3,6 +3,7 @@ import os
 import pandas as pd
 import torch
 import tiktoken
+import time
 from model import GPT
 
 # -----------------------------------------------------------
@@ -17,6 +18,8 @@ seed = 42 # Random seed for reproducibility
 device = "cpu" # Options: "cpu", "cuda" (if available)
 dtype = "bfloat16" if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else "float16"
 metrics_file = "results/metrics.csv" # File to save metrics
+cpu_metrics_file = "results/cpu_metrics.csv" # File to save metrics
+
 exec(open("configurator.py").read()) # Overrides from command line or config file
 # -----------------------------------------------------------
 
@@ -48,6 +51,8 @@ total_kv_cache = {} # Dictionary to store KV cache for each request
 with torch.no_grad():
     with ctx:
         for k in range(num_requests):
+            # Measuring NUMA performace: we measure wall clock time between each generate() function to see if clock times went down
+            gen_start_time = time.perf_counter()
             y, updated_kv_cache, metrics, cpu_metrics = model.generate(
                 x, 
                 max_new_tokens=max_new_tokens,
@@ -57,6 +62,12 @@ with torch.no_grad():
                 )
             # print(decode(y[0].tolist()))
             # print("=" * 40)
+
+            # --- Stop the wall clock timer for the generation loop ---
+            gen_end_time = time.perf_counter()
+
+            # --- Calculate and print the elapsed time ---
+            elapsed_time = gen_end_time - gen_start_time
 
             # Update KV cache
             total_kv_cache[k] = updated_kv_cache
@@ -71,7 +82,5 @@ with torch.no_grad():
             metrics["model"] = init_from
             metrics_df = pd.DataFrame([metrics])
             metrics_file_exists = os.path.exists(metrics_file)
-            metrics_df.to_csv(metrics_file, mode='a', header=not metrics_file_exists, index=False)
-            print(metrics_df)
-
-            print(cpu_metrics)
+            metrics_df.to_csv(metrics_file, mode='a', header=not metrics_file_exists, index=False) 
+            # print(metrics_df)
