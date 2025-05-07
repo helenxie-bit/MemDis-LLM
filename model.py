@@ -17,6 +17,8 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
+# For CPU monitoring
+import psutil 
 class LayerNorm(nn.Module):
     """ LayerNorm but with an optional bias. PyTorch doesn't support simply bias=False """
 
@@ -316,11 +318,17 @@ class GPT(nn.Module):
         the sequence max_new_tokens times, feeding the predictions back into the model each time.
         Most likely you'll want to make sure to be in model.eval() mode of operation for this.
         """
+        # --- CPU Monitoring Setup ---
+        current_process = psutil.Process()
+        per_token_cpu_stats = []
+        prompt_len_for_abs_idx = idx.size(1) # Original length of the prompt
+        # --- End CPU Monitoring Setup ---
+
         times = []
         batch_size, seq_len = idx.size()
         total_idx = idx
 
-        for _ in range(max_new_tokens):
+        for token_gen_iter in range(max_new_tokens):
             start_time = time.time()
 
             # forward the model to get the logits for the index in the sequence
@@ -351,6 +359,23 @@ class GPT(nn.Module):
             end_time = time.time()
             times.append(end_time - start_time)
         
+            # --- CPU Monitoring - Data Collection for the generated idx_next ---
+            token_timestamp = time.perf_counter() # High-resolution timestamp
+            cpu_percent_val = current_process.cpu_percent(interval=None) # CPU usage since last call
+            try:
+                cpu_core_val = current_process.cpu_num() # Which core this process ran on
+            except (AttributeError, NotImplementedError, psutil.Error):
+                cpu_core_val = -1 # Unknown or error
+            
+            per_token_cpu_stats.append({
+                'token_index_in_generation': token_gen_iter, # 0 for 1st new token, 1 for 2nd, ...
+                'absolute_token_index': prompt_len_for_abs_idx + token_gen_iter,
+                'timestamp': token_timestamp,
+                'cpu_percent_process': cpu_percent_val,
+                'cpu_core_process': cpu_core_val,
+                'generated_token_id': idx_next.item() if batch_size == 1 else idx_next[0].item() # Assuming batch_size 1 for single item, or take first of batch
+            })
+
         time_to_first_token = times[0]
         if len(times) > 1:
             time_between_tokens = (sum(times) - time_to_first_token) / (batch_size * (len(times) - 1))
@@ -367,4 +392,4 @@ class GPT(nn.Module):
             "tokens_per_second": tokens_per_second
         }
 
-        return total_idx, kv_cache, metrics
+        return total_idx, kv_cache, metrics, per_token_cpu_stats

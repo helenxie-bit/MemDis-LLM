@@ -48,9 +48,15 @@ total_kv_cache = {} # Dictionary to store KV cache for each request
 with torch.no_grad():
     with ctx:
         for k in range(num_requests):
-            y, updated_kv_cache, metrics = model.generate(x, max_new_tokens=max_new_tokens, temperature=temperature, top_k=top_k, kv_cache=total_kv_cache[k] if k in total_kv_cache else None)
-            #print(decode(y[0].tolist()))
-            #print("=" * 40)
+            y, updated_kv_cache, metrics, cpu_metrics = model.generate(
+                x, 
+                max_new_tokens=max_new_tokens,
+                temperature=temperature, 
+                top_k=top_k,
+                kv_cache=total_kv_cache[k] if k in total_kv_cache else None
+                )
+            # print(decode(y[0].tolist()))
+            # print("=" * 40)
 
             # Update KV cache
             total_kv_cache[k] = updated_kv_cache
@@ -67,3 +73,5 @@ with torch.no_grad():
             metrics_file_exists = os.path.exists(metrics_file)
             metrics_df.to_csv(metrics_file, mode='a', header=not metrics_file_exists, index=False)
             print(metrics_df)
+
+            print(cpu_metrics)
