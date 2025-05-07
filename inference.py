@@ -18,7 +18,7 @@ seed = 42 # Random seed for reproducibility
 device = "cpu" # Options: "cpu", "cuda" (if available)
 dtype = "bfloat16" if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else "float16"
 metrics_file = "results/metrics.csv" # File to save metrics
-cpu_metrics_file = "results/cpu_metrics.csv" # File to save metrics
+cpu_metrics_file = "results/cpu_clock_metrics.csv" # File to save metrics
 
 exec(open("configurator.py").read()) # Overrides from command line or config file
 # -----------------------------------------------------------
@@ -47,13 +47,15 @@ x = torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...]
 
 total_kv_cache = {} # Dictionary to store KV cache for each request
 
+gen_count = 0
+generation_cycle_times = []
 # Generate text
 with torch.no_grad():
     with ctx:
         for k in range(num_requests):
             # Measuring NUMA performace: we measure wall clock time between each generate() function to see if clock times went down
             gen_start_time = time.perf_counter()
-            y, updated_kv_cache, metrics, cpu_metrics = model.generate(
+            y, updated_kv_cache, metrics = model.generate(
                 x, 
                 max_new_tokens=max_new_tokens,
                 temperature=temperature, 
@@ -63,11 +65,15 @@ with torch.no_grad():
             # print(decode(y[0].tolist()))
             # print("=" * 40)
 
-            # --- Stop the wall clock timer for the generation loop ---
+            # Take note of how much time it took
             gen_end_time = time.perf_counter()
-
-            # --- Calculate and print the elapsed time ---
             elapsed_time = gen_end_time - gen_start_time
+
+            generation_cycle_times.append({
+                "generation_index": gen_count,
+                "elapsed_time_seconds": elapsed_time
+            })
+            gen_count += 1
 
             # Update KV cache
             total_kv_cache[k] = updated_kv_cache
@@ -84,3 +90,7 @@ with torch.no_grad():
             metrics_file_exists = os.path.exists(metrics_file)
             metrics_df.to_csv(metrics_file, mode='a', header=not metrics_file_exists, index=False) 
             # print(metrics_df)
+
+    cycle_times = pd.DataFrame(generation_cycle_times)
+    cycle_times.to_csv(cpu_metrics_file, index=False)
+    print(generation_cycle_times)
