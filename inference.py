@@ -1,5 +1,6 @@
 from contextlib import nullcontext
 import os
+import numpy as np
 import pandas as pd
 import torch
 import tiktoken
@@ -19,6 +20,10 @@ device = "cpu" # Options: "cpu", "cuda" (if available)
 dtype = "bfloat16" if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else "float16"
 metrics_file = "results/metrics.csv" # File to save metrics
 cpu_metrics_file = "results/cpu_clock_metrics.csv" # File to save metrics
+kv_method = "memory" # Options: "memory", "disk"
+kv_cache_dir = './kv_cache_memmap/'
+if kv_method == 'disk':
+    os.makedirs(kv_cache_dir, exist_ok=True)
 
 exec(open("configurator.py").read()) # Overrides from command line or config file
 # -----------------------------------------------------------
@@ -55,12 +60,29 @@ with torch.no_grad():
         for k in range(num_requests):
             # Measuring NUMA performace: we measure wall clock time between each generate() function to see if clock times went down
             gen_start_time = time.perf_counter()
+            if kv_method == 'memory':
+                kv_cache = total_kv_cache.get(k, None)
+            else:
+                kv_cache = []
+                for i in range(num_layers):  # assume num_layers is known or passed
+                    key_path = os.path.join(kv_cache_dir, f"req{k}_layer{i}_key.npy")
+                    val_path = os.path.join(kv_cache_dir, f"req{k}_layer{i}_value.npy")
+                    if os.path.exists(key_path) and os.path.exists(val_path):
+                        k_array = np.load(key_path, mmap_mode='r')
+                        v_array = np.load(val_path, mmap_mode='r')
+                        kv_cache.append((
+                            torch.from_numpy(k_array).to(device),
+                            torch.from_numpy(v_array).to(device)
+                        ))
+                    else:
+                        kv_cache = None
+                        break
             y, updated_kv_cache, metrics = model.generate(
                 x, 
                 max_new_tokens=max_new_tokens,
                 temperature=temperature, 
                 top_k=top_k,
-                kv_cache=total_kv_cache[k] if k in total_kv_cache else None
+                kv_cache=kv_cache
                 )
             # print(decode(y[0].tolist()))
             # print("=" * 40)
@@ -76,7 +98,13 @@ with torch.no_grad():
             gen_count += 1
 
             # Update KV cache
-            total_kv_cache[k] = updated_kv_cache
+            if kv_method == 'memory':
+                total_kv_cache[k] = updated_kv_cache
+            else:
+                # Save as memmap to disk
+                for i, (k_tensor, v_tensor) in enumerate(updated_kv_cache):
+                    np.save(os.path.join(kv_cache_dir, f"req{k}_layer{i}_key.npy"), k_tensor.cpu().numpy())
+                    np.save(os.path.join(kv_cache_dir, f"req{k}_layer{i}_value.npy"), v_tensor.cpu().numpy())
             total_bytes = sum(
                 keys.element_size() * keys.numel() + values.element_size() * values.numel()
                 for tensor_list in total_kv_cache.values()
