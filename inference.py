@@ -6,6 +6,7 @@ import torch
 import tiktoken
 import time
 from model import GPT
+from kvDiskSim import save_kvcache_memmap, load_kvcache_memmap
 
 # -----------------------------------------------------------
 # Configuration
@@ -21,7 +22,7 @@ dtype = "bfloat16" if torch.cuda.is_available() and torch.cuda.is_bf16_supported
 metrics_file = "results/metrics.csv" # File to save metrics
 cpu_metrics_file = "results/cpu_clock_metrics.csv" # File to save metrics
 kv_method = "memory" # Options: "memory", "disk"
-kv_cache_dir = './kv_cache_memmap/'
+kv_cache_dir = './kv_cache_disk/'
 if kv_method == 'disk':
     os.makedirs(kv_cache_dir, exist_ok=True)
 
@@ -63,20 +64,7 @@ with torch.no_grad():
             if kv_method == 'memory':
                 kv_cache = total_kv_cache.get(k, None)
             else:
-                kv_cache = []
-                for i in range(num_layers):  # assume num_layers is known or passed
-                    key_path = os.path.join(kv_cache_dir, f"req{k}_layer{i}_key.npy")
-                    val_path = os.path.join(kv_cache_dir, f"req{k}_layer{i}_value.npy")
-                    if os.path.exists(key_path) and os.path.exists(val_path):
-                        k_array = np.load(key_path, mmap_mode='r')
-                        v_array = np.load(val_path, mmap_mode='r')
-                        kv_cache.append((
-                            torch.from_numpy(k_array).to(device),
-                            torch.from_numpy(v_array).to(device)
-                        ))
-                    else:
-                        kv_cache = None
-                        break
+                kv_cache = load_kvcache_memmap(k, kv_cache_dir, device)
             y, updated_kv_cache, metrics = model.generate(
                 x, 
                 max_new_tokens=max_new_tokens,
@@ -101,10 +89,7 @@ with torch.no_grad():
             if kv_method == 'memory':
                 total_kv_cache[k] = updated_kv_cache
             else:
-                # Save as memmap to disk
-                for i, (k_tensor, v_tensor) in enumerate(updated_kv_cache):
-                    np.save(os.path.join(kv_cache_dir, f"req{k}_layer{i}_key.npy"), k_tensor.cpu().numpy())
-                    np.save(os.path.join(kv_cache_dir, f"req{k}_layer{i}_value.npy"), v_tensor.cpu().numpy())
+                save_kvcache_memmap(k, updated_kv_cache, kv_cache_dir)
             total_bytes = sum(
                 keys.element_size() * keys.numel() + values.element_size() * values.numel()
                 for tensor_list in total_kv_cache.values()
@@ -122,3 +107,10 @@ with torch.no_grad():
     cycle_times = pd.DataFrame(generation_cycle_times)
     cycle_times.to_csv(cpu_metrics_file, index=False)
     print(generation_cycle_times)
+
+# kv-cache cleanup
+if kv_method == "disk" and os.path.isdir(kv_cache_dir) and "kv_cache_disk" in kv_cache_dir:
+    for root, _, files in os.walk(kv_cache_dir, topdown=False):
+        for file in files:
+            os.remove(os.path.join(root, file))
+        os.rmdir(root)
