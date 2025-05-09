@@ -11,22 +11,24 @@ from kvDiskSim import save_kvcache_memmap, load_kvcache_memmap
 # -----------------------------------------------------------
 # Configuration
 init_from = "gpt2" # Options: "gpt2", "gpt2-medium", "gpt2-large", "gpt2-xl"
-start = "\n" # Prompt to start text generation from (can also specify a file, use as: "FILE:prompt.txt")
-num_requests = 5
-max_new_tokens = 100
+start = "FILE:data/input.txt" # Prompt to start text generation from (can also specify a file, use as: "FILE:prompt.txt")
+num_requests = 10
+input_tokens = 1000
+max_new_tokens = 20
 temperature = 0.0 # In order to get deterministic results for reproduction, set temperature to 0.0
 top_k = 200 # Retain only the top k tokens with highest probability (not used if temperature==0.0)
 seed = 42 # Random seed for reproducibility
 device = "cpu" # Options: "cpu", "cuda" (if available)
 dtype = "bfloat16" if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else "float16"
-metrics_file = "results/metrics.csv" # File to save metrics
-cpu_metrics_file = "results/cpu_clock_metrics.csv" # File to save metrics
-kv_method = "memory" # Options: "memory", "disk"
+kv_method = "local-memory" # Options: "local-memory", "remote-memory", "disk"
 kv_cache_dir = './kv_cache_disk/'
 if kv_method == 'disk':
     os.makedirs(kv_cache_dir, exist_ok=True)
 
 exec(open("configurator.py").read()) # Overrides from command line or config file
+
+metrics_file = f"results/metrics_{kv_method}.csv" # File to save metrics
+cpu_metrics_file = f"results/cpu_clock_metrics_{kv_method}.csv" # File to save metrics
 # -----------------------------------------------------------
 
 torch.manual_seed(seed)
@@ -49,7 +51,7 @@ if start.startswith("FILE:"):
     with open(start[5:], "r") as f:
         start = f.read()
 start_ids = encode(start)
-x = torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...]
+x = torch.tensor(start_ids[:input_tokens], dtype=torch.long, device=device)[None, ...]
 
 total_kv_cache = {} # Dictionary to store KV cache for each request
 
@@ -61,7 +63,7 @@ with torch.no_grad():
         for k in range(num_requests):
             # Measuring NUMA performace: we measure wall clock time between each generate() function to see if clock times went down
             gen_start_time = time.perf_counter()
-            if kv_method == 'memory':
+            if kv_method == 'local-memory' or kv_method == 'remote-memory':
                 kv_cache = total_kv_cache.get(k, None)
             else:
                 kv_cache = load_kvcache_memmap(k, kv_cache_dir, device)
@@ -86,7 +88,7 @@ with torch.no_grad():
             gen_count += 1
 
             # Update KV cache
-            if kv_method == 'memory':
+            if kv_method == 'local-memory' or kv_method == 'remote-memory':
                 total_kv_cache[k] = updated_kv_cache
             else:
                 save_kvcache_memmap(k, updated_kv_cache, kv_cache_dir)
