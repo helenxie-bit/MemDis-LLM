@@ -26,6 +26,11 @@ numactl --cpunodebind=0 --membind=0 python inference.py \
     --start="What is the answer to life, the universe, and everything?" \
     --num_requests=5 --max_new_tokens=100
 ```
+Install `numatcl`:
+```[shell]
+sudo apt update
+sudo apt install -y numactl hwloc
+```
 
 ### Case 2: Remote Memory
 To simulate disaggregated memory, we use memory from a remote NUMA node while keeping compute on a local one. This mimics the effect of memory disaggregation:

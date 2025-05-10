@@ -61,16 +61,20 @@ with torch.no_grad():
         for k in range(num_requests):
             # Measuring NUMA performace: we measure wall clock time between each generate() function to see if clock times went down
             gen_start_time = time.perf_counter()
-            if kv_method == 'memory':
-                kv_cache = total_kv_cache.get(k, None)
-            else:
-                kv_cache = load_kvcache_memmap(k, kv_cache_dir, device)
+            #if kv_method == 'memory':
+            kv_cache = total_kv_cache.get(k, None)
+            #else:
+            #    kv_cache = load_kvcache_memmap(k, kv_cache_dir, device)
             y, updated_kv_cache, metrics = model.generate(
                 x, 
                 max_new_tokens=max_new_tokens,
                 temperature=temperature, 
                 top_k=top_k,
-                kv_cache=kv_cache
+                kv_cache=kv_cache,
+                kv_method=kv_method,
+                kv_cache_dir=kv_cache_dir,
+                device=device,
+                request_id=k,
                 )
             # print(decode(y[0].tolist()))
             # print("=" * 40)
@@ -86,10 +90,10 @@ with torch.no_grad():
             gen_count += 1
 
             # Update KV cache
-            if kv_method == 'memory':
-                total_kv_cache[k] = updated_kv_cache
-            else:
-                save_kvcache_memmap(k, updated_kv_cache, kv_cache_dir)
+            #if kv_method == 'memory':
+            total_kv_cache[k] = updated_kv_cache
+            #else:
+            #    save_kvcache_memmap(k, updated_kv_cache, kv_cache_dir)
             total_bytes = sum(
                 keys.element_size() * keys.numel() + values.element_size() * values.numel()
                 for tensor_list in total_kv_cache.values()

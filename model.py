@@ -16,6 +16,7 @@ import time
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
+from kvDiskSim import save_kvcache_memmap, load_kvcache_memmap
 
 # For CPU monitoring
 import psutil 
@@ -312,7 +313,7 @@ class GPT(nn.Module):
         return mfu
 
     @torch.no_grad()
-    def generate(self, idx, max_new_tokens, temperature=0.0, top_k=None, kv_cache=None):
+    def generate(self, idx, max_new_tokens, temperature=0.0, top_k=None, kv_cache=None, kv_method='local-memory', kv_cache_dir='./kv_cache_disk/', device='cpu', request_id=None):
         """
         Take a conditioning sequence of indices idx (LongTensor of shape (b,t)) and complete
         the sequence max_new_tokens times, feeding the predictions back into the model each time.
@@ -327,6 +328,10 @@ class GPT(nn.Module):
 
         for token_gen_iter in range(max_new_tokens):
             start_time = time.time()
+
+            if kv_method == 'disk':
+                # load the KV cache from disk
+                kv_cache = load_kvcache_memmap(request_id, kv_cache_dir, device)
 
             # forward the model to get the logits for the index in the sequence
             logits, _, updated_kv_cache = self(idx, kv_cache=kv_cache)
@@ -352,6 +357,10 @@ class GPT(nn.Module):
             # update the input and the KV cache for the next iteration
             idx = idx_next
             kv_cache = updated_kv_cache
+
+            if kv_method == 'disk':
+                # save the updated KV cache to disk
+                save_kvcache_memmap(request_id, kv_cache, kv_cache_dir)
 
             end_time = time.time()
             times.append(end_time - start_time)
