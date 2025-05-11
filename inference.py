@@ -1,19 +1,18 @@
-import os
-import time
 from contextlib import nullcontext
-
+import os
+import numpy as np
 import pandas as pd
-import tiktoken
 import torch
-
-from kvDiskSim import get_dir_size
+import tiktoken
+import time
 from model import GPT
+from kvDiskSim import get_dir_size
 
 # -----------------------------------------------------------
 # Configuration
 init_from = "gpt2" # Options: "gpt2", "gpt2-medium", "gpt2-large", "gpt2-xl"
 start = "FILE:data/input.txt" # Prompt to start text generation from (can also specify a file, use as: "FILE:prompt.txt")
-num_requests = 1
+num_requests = 10
 input_tokens = 1000
 max_new_tokens = 20
 temperature = 0.0 # In order to get deterministic results for reproduction, set temperature to 0.0
