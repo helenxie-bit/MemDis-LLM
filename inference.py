@@ -1,32 +1,35 @@
-from contextlib import nullcontext
 import os
-import numpy as np
-import pandas as pd
-import torch
-import tiktoken
 import time
+from contextlib import nullcontext
+
+import pandas as pd
+import tiktoken
+import torch
+
+from kvDiskSim import get_dir_size
 from model import GPT
-from kvDiskSim import save_kvcache_memmap, load_kvcache_memmap
 
 # -----------------------------------------------------------
 # Configuration
 init_from = "gpt2" # Options: "gpt2", "gpt2-medium", "gpt2-large", "gpt2-xl"
-start = "\n" # Prompt to start text generation from (can also specify a file, use as: "FILE:prompt.txt")
-num_requests = 5
-max_new_tokens = 100
+start = "FILE:data/input.txt" # Prompt to start text generation from (can also specify a file, use as: "FILE:prompt.txt")
+num_requests = 1
+input_tokens = 1000
+max_new_tokens = 20
 temperature = 0.0 # In order to get deterministic results for reproduction, set temperature to 0.0
 top_k = 200 # Retain only the top k tokens with highest probability (not used if temperature==0.0)
 seed = 42 # Random seed for reproducibility
 device = "cpu" # Options: "cpu", "cuda" (if available)
 dtype = "bfloat16" if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else "float16"
-metrics_file = "results/metrics.csv" # File to save metrics
-cpu_metrics_file = "results/cpu_clock_metrics.csv" # File to save metrics
-kv_method = "memory" # Options: "memory", "disk"
+kv_method = "local-memory" # Options: "local-memory", "remote-memory", "disk"
 kv_cache_dir = './kv_cache_disk/'
 if kv_method == 'disk':
     os.makedirs(kv_cache_dir, exist_ok=True)
 
 exec(open("configurator.py").read()) # Overrides from command line or config file
+
+metrics_file = f"results/metrics_{kv_method}.csv" # File to save metrics
+cpu_metrics_file = f"results/cpu_clock_metrics_{kv_method}.csv" # File to save metrics
 # -----------------------------------------------------------
 
 torch.manual_seed(seed)
@@ -49,9 +52,13 @@ if start.startswith("FILE:"):
     with open(start[5:], "r") as f:
         start = f.read()
 start_ids = encode(start)
-x = torch.tensor(start_ids, dtype=torch.long, device=device)[None, ...]
+x = torch.tensor(start_ids[:input_tokens], dtype=torch.long, device=device)[None, ...]
 
-total_kv_cache = {} # Dictionary to store KV cache for each request
+# Initialize KV cache
+if kv_method == "local-memory" or kv_method == "remote-memory":
+    total_kv_cache = {}  # Dictionary to store KV cache for each request if using memory method
+else:
+    os.makedirs(kv_cache_dir, exist_ok=True)  # Directory to store KV cache files if using disk method
 
 gen_count = 0
 generation_cycle_times = []
@@ -61,21 +68,22 @@ with torch.no_grad():
         for k in range(num_requests):
             # Measuring NUMA performace: we measure wall clock time between each generate() function to see if clock times went down
             gen_start_time = time.perf_counter()
-            #if kv_method == 'memory':
-            kv_cache = total_kv_cache.get(k, None)
-            #else:
-            #    kv_cache = load_kvcache_memmap(k, kv_cache_dir, device)
+
             y, updated_kv_cache, metrics = model.generate(
-                x, 
+                x,
                 max_new_tokens=max_new_tokens,
-                temperature=temperature, 
+                temperature=temperature,
                 top_k=top_k,
-                kv_cache=kv_cache,
                 kv_method=kv_method,
+                kv_cache=(
+                    total_kv_cache.get(k, None)
+                    if kv_method in ["local-memory", "remote-memory"]
+                    else None
+                ),
+                request_id=k,
                 kv_cache_dir=kv_cache_dir,
                 device=device,
-                request_id=k,
-                )
+            )
             # print(decode(y[0].tolist()))
             # print("=" * 40)
 
@@ -89,17 +97,20 @@ with torch.no_grad():
             })
             gen_count += 1
 
-            # Update KV cache
-            #if kv_method == 'memory':
-            total_kv_cache[k] = updated_kv_cache
-            #else:
-            #    save_kvcache_memmap(k, updated_kv_cache, kv_cache_dir)
-            total_bytes = sum(
-                keys.element_size() * keys.numel() + values.element_size() * values.numel()
-                for tensor_list in total_kv_cache.values()
-                for keys, values in tensor_list
+            # Update the dictionary which stores KV cache if using memory method
+            if kv_method in ["local-memory", "remote-memory"]:
+                total_kv_cache[k] = updated_kv_cache
+                total_bytes = sum(
+                    keys.element_size() * keys.numel()
+                    + values.element_size() * values.numel()
+                    for tensor_list in total_kv_cache.values()
+                    for keys, values in tensor_list
+                )
+            else:
+                total_bytes = get_dir_size(kv_cache_dir)
+            print(
+                f"Total KV cache size after {k}th request: {total_bytes / (1024 ** 2):.2f} MB"
             )
-            print(f"Total KV cache size after {k}th request: {total_bytes / (1024 ** 2):.2f} MB")
 
             # Save metrics to a DataFrame and a CSV file
             metrics["model"] = init_from

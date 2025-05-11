@@ -57,8 +57,8 @@ class CausalSelfAttention(nn.Module):
         q, k, v  = self.c_attn(x).split(self.n_embd, dim=2)
         
         q = q.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
-        k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, total_T, hs)
-        v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, total_T, hs)
+        k = k.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
+        v = v.view(B, T, self.n_head, C // self.n_head).transpose(1, 2) # (B, nh, T, hs)
 
         # if we are using past_key_value, we need to concatenate the new key and value with the old ones
         if past_key_value is not None:
@@ -172,7 +172,16 @@ class GPT(nn.Module):
         elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
-    def forward(self, idx, targets=None, kv_cache=None):
+    def forward(
+        self,
+        idx,
+        targets=None,
+        kv_method=None,
+        kv_cache=None,
+        request_id=None,
+        kv_cache_dir=None,
+        device=None,
+    ):
         device = idx.device
         b, t = idx.size()
         assert t <= self.config.block_size, f"Cannot forward sequence of length {t}, block size is only {self.config.block_size}"
@@ -183,12 +192,17 @@ class GPT(nn.Module):
         pos_emb = self.transformer.wpe(pos) # position embeddings of shape (t, n_embd)
         x = self.transformer.drop(tok_emb + pos_emb)
 
-        if kv_cache is None:
-            kv_cache = [None] * self.config.n_layer # initialize the KV cache for all layers
+        if kv_method in ["local-memory", "remote-memory"] and kv_cache is None:
+            kv_cache = [None] * self.config.n_layer  # initialize the KV cache for all layers
 
         for i, block in enumerate(self.transformer.h):
-            x, updated_kv_value = block(x, past_key_value=kv_cache[i])
-            kv_cache[i] = updated_kv_value # update the KV cache for layer i
+            if kv_method in ["local-memory", "remote-memory"]:
+                x, updated_kv_value = block(x, past_key_value=kv_cache[i])
+                kv_cache[i] = updated_kv_value  # update the KV cache for layer i
+            else:
+                past_key_value = load_kvcache_memmap(request_id, i, kv_cache_dir, device)  # load the KV cache from disk
+                x, updated_kv_value = block(x, past_key_value=past_key_value)
+                save_kvcache_memmap(request_id, i, updated_kv_value, kv_cache_dir)  # save the updated KV cache to disk
         x = self.transformer.ln_f(x)
 
         if targets is not None:
@@ -313,7 +327,18 @@ class GPT(nn.Module):
         return mfu
 
     @torch.no_grad()
-    def generate(self, idx, max_new_tokens, temperature=0.0, top_k=None, kv_cache=None, kv_method='local-memory', kv_cache_dir='./kv_cache_disk/', device='cpu', request_id=None):
+    def generate(
+        self,
+        idx,
+        max_new_tokens,
+        temperature=0.0,
+        top_k=None,
+        kv_method=None,
+        kv_cache=None,
+        request_id=None,
+        kv_cache_dir=None,
+        device=None,
+    ):
         """
         Take a conditioning sequence of indices idx (LongTensor of shape (b,t)) and complete
         the sequence max_new_tokens times, feeding the predictions back into the model each time.
@@ -329,12 +354,15 @@ class GPT(nn.Module):
         for token_gen_iter in range(max_new_tokens):
             start_time = time.time()
 
-            if kv_method == 'disk':
-                # load the KV cache from disk
-                kv_cache = load_kvcache_memmap(request_id, kv_cache_dir, device)
-
             # forward the model to get the logits for the index in the sequence
-            logits, _, updated_kv_cache = self(idx, kv_cache=kv_cache)
+            logits, _, updated_kv_cache = self(
+                idx,
+                kv_method=kv_method,
+                kv_cache=kv_cache,
+                request_id=request_id,
+                kv_cache_dir=kv_cache_dir,
+                device=device,
+            )
             # pluck the logits at the final step and scale by desired temperature
             if temperature == 0.0:
                 # greedy sampling (no randomness)
@@ -357,10 +385,6 @@ class GPT(nn.Module):
             # update the input and the KV cache for the next iteration
             idx = idx_next
             kv_cache = updated_kv_cache
-
-            if kv_method == 'disk':
-                # save the updated KV cache to disk
-                save_kvcache_memmap(request_id, kv_cache, kv_cache_dir)
 
             end_time = time.time()
             times.append(end_time - start_time)
