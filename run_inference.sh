@@ -13,7 +13,7 @@ mkdir -p results
 numactl --cpunodebind=0 --membind=0 python inference.py
 
 # Run inference under case 2 (remote memory)
-numactl --cpunodebind=0 python inference.py --kv_method=remote-memory --numa_node=1
+numactl --cpunodebind=0 python inference.py --kv_method=remote-memory --remote_node=1
 
 # Run inference under case 3 (disk)
 numactl --cpunodebind=0 python inference.py --kv_method=disk

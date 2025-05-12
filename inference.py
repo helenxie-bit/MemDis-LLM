@@ -32,8 +32,8 @@ remote_node = 1 # NUMA node to allocate on (if using remote memory)
 
 exec(open("configurator.py").read()) # Overrides from command line or config file
 
-metrics_file = f"results/metrics_{kv_method}.csv" # File to save metrics
-cpu_metrics_file = f"results/cpu_clock_metrics_{kv_method}.csv" # File to save metrics
+metrics_file = f"results/metrics_{tiered_kv_cache}_{kv_method}.csv" # File to save metrics
+cpu_metrics_file = f"results/cpu_clock_metrics_{tiered_kv_cache}_{kv_method}.csv" # File to save metrics
 # -----------------------------------------------------------
 
 torch.manual_seed(seed)
