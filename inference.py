@@ -28,6 +28,7 @@ if kv_method == 'disk':
 tiered_kv_cache = False # Whether to use tiered KV cache
 memory_limit = 1024 # Configure according to your system, here we set it to 1 GB
 memory_threshold = 0.7 # Memory threshold for switching to next tier
+local_node = 0
 remote_node = 1 # NUMA node to allocate on (if using remote memory)
 
 exec(open("configurator.py").read()) # Overrides from command line or config file
@@ -88,6 +89,7 @@ with torch.no_grad():
                 ),
                 request_id=k,
                 remote_memory_var=total_kv_cache_remote if kv_method == "remote-memory" else None,
+                local_node=local_node,
                 remote_node=remote_node,
                 kv_cache_dir=kv_cache_dir,
                 device=device,
@@ -116,7 +118,7 @@ with torch.no_grad():
                 ) / (1024 ** 2)  # Convert to MB
                 print(f"Total KV cache size after {k}th request: {kv_cache_size:.2f} MB")
 
-                if tiered_kv_cache == True and kv_cache_size > memory_limit * memory_threshold:
+                if tiered_kv_cache == True and kv_cache_size >= memory_limit * memory_threshold:
                     print(f"Warning: Memory usage exceeded threshold, switching to remote memory...")
                     kv_method = "remote-memory"
                     total_kv_cache_remote = {}  # Initialize remote cache in this case
@@ -125,7 +127,7 @@ with torch.no_grad():
                 kv_cache_size = get_remote_kvcache_memory_usage(total_kv_cache_remote) / (1024 ** 2)  # Convert to MB
                 print(f"Total KV cache size after {k}th request: {kv_cache_size:.2f} MB")
 
-                if tiered_kv_cache ==True and kv_cache_size > memory_limit * memory_threshold:
+                if tiered_kv_cache ==True and kv_cache_size >= memory_limit * memory_threshold:
                     print(f"Warning: Memory usage exceeded threshold, switching to disk...")
                     kv_method = "disk"
                     os.makedirs(kv_cache_dir, exist_ok=True) # Initialize the directory to store cache in disk in this case
