@@ -9,7 +9,7 @@ import numa
 def allocate_on_remote_numa(shape, dtype=torch.float16, numa_node=1):
     numa.set_preferred(numa_node)
     tensor = torch.empty(shape, dtype=dtype)
-    numa.set_preferred(-1)
+    numa.set_preferred(0)  # Reset to default NUMA node
     return tensor
 
 # ===============================
