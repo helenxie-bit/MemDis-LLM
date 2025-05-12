@@ -87,7 +87,7 @@ with torch.no_grad():
                     else None
                 ),
                 request_id=k,
-                remote_memory_var=total_kv_cache_remote,
+                remote_memory_var=total_kv_cache_remote if kv_method == "remote-memory" else None,
                 remote_node=remote_node,
                 kv_cache_dir=kv_cache_dir,
                 device=device,
