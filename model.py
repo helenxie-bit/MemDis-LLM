@@ -179,9 +179,6 @@ class GPT(nn.Module):
         kv_method=None,
         kv_cache=None,
         request_id=None,
-        remote_memory_var=None,
-        local_node=None,
-        remote_node=None,
         kv_cache_dir=None,
         device=None,
     ):
@@ -199,14 +196,9 @@ class GPT(nn.Module):
             kv_cache = [None] * self.config.n_layer  # initialize the KV cache for all layers
 
         for i, block in enumerate(self.transformer.h):
-            #if kv_method == "local-memory":
             if kv_method in ["local-memory", "remote-memory"]:
                 x, updated_kv_value = block(x, past_key_value=kv_cache[i])
                 kv_cache[i] = updated_kv_value  # update the KV cache for layer i
-            #elif kv_method == "remote-memory":
-            #    past_key_value = load_kvcache_remote(request_id, i, remote_memory_var)  # load the KV cache from remote memory
-            #    x, updated_kv_value = block(x, past_key_value=past_key_value)
-            #    save_kvcache_remote(request_id, i, updated_kv_value, remote_memory_var, local_node=local_node, remote_node=remote_node)  # save the updated KV cache to remote memorys
             else:
                 past_key_value = load_kvcache_memmap(request_id, i, kv_cache_dir, device)  # load the KV cache from disk
                 x, updated_kv_value = block(x, past_key_value=past_key_value)
@@ -344,9 +336,6 @@ class GPT(nn.Module):
         kv_method=None,
         kv_cache=None,
         request_id=None,
-        remote_memory_var=None,
-        local_node=None,
-        remote_node=None,
         kv_cache_dir=None,
         device=None,
     ):
@@ -371,9 +360,6 @@ class GPT(nn.Module):
                 kv_method=kv_method,
                 kv_cache=kv_cache,
                 request_id=request_id,
-                remote_memory_var=remote_memory_var,
-                remote_node=remote_node,
-                local_node=local_node,
                 kv_cache_dir=kv_cache_dir,
                 device=device,
             )

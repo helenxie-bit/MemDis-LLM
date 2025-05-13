@@ -7,7 +7,6 @@ import tiktoken
 import time
 from model import GPT
 from kvDiskSim import get_dir_size
-from kvRemoteSim import get_remote_kvcache_memory_usage
 import numa_bind
 
 # -----------------------------------------------------------
@@ -92,9 +91,6 @@ with torch.no_grad():
                     else None
                 ),
                 request_id=k,
-                remote_memory_var=total_kv_cache_remote if kv_method == "remote-memory" else None,
-                local_node=local_node,
-                remote_node=remote_node,
                 kv_cache_dir=kv_cache_dir,
                 device=device,
             )
@@ -136,12 +132,12 @@ with torch.no_grad():
                     for tensor_list in total_kv_cache_remote.values()
                     for keys, values in tensor_list
                 ) / (1024 ** 2)
-                #kv_cache_size_remote = get_remote_kvcache_memory_usage(total_kv_cache_remote) / (1024 ** 2)  # Convert to MB
                 print(f"Total KV cache size after {k}th request: {kv_cache_size_local + kv_cache_size_remote:.2f} MB")
 
                 if tiered_kv_cache ==True and kv_cache_size_remote >= memory_limit * memory_threshold:
                     print(f"Warning: Memory usage exceeded threshold, switching to disk...")
                     kv_method = "disk"
+                    numa_bind.set_membind(local_node)  # Set memory binding to local NUMA node
                     os.makedirs(kv_cache_dir, exist_ok=True) # Initialize the directory to store cache in disk in this case
 
             else:
