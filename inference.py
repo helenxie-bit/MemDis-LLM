@@ -129,7 +129,14 @@ with torch.no_grad():
                     total_kv_cache_remote = {}  # Initialize remote cache in this case
 
             elif kv_method == "remote-memory":
-                kv_cache_size_remote = get_remote_kvcache_memory_usage(total_kv_cache_remote) / (1024 ** 2)  # Convert to MB
+                total_kv_cache_remote[k] = updated_kv_cache
+                kv_cache_size_remote = sum(
+                    keys.element_size() * keys.numel()
+                    + values.element_size() * values.numel()
+                    for tensor_list in total_kv_cache_remote.values()
+                    for keys, values in tensor_list
+                ) / (1024 ** 2)
+                #kv_cache_size_remote = get_remote_kvcache_memory_usage(total_kv_cache_remote) / (1024 ** 2)  # Convert to MB
                 print(f"Total KV cache size after {k}th request: {kv_cache_size_local + kv_cache_size_remote:.2f} MB")
 
                 if tiered_kv_cache ==True and kv_cache_size_remote >= memory_limit * memory_threshold:

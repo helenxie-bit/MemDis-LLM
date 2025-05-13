@@ -195,13 +195,13 @@ class GPT(nn.Module):
         pos_emb = self.transformer.wpe(pos) # position embeddings of shape (t, n_embd)
         x = self.transformer.drop(tok_emb + pos_emb)
 
-        if kv_method in ["local-memory", "remote_memory"] and kv_cache is None:
+        if kv_method in ["local-memory", "remote-memory"] and kv_cache is None:
             kv_cache = [None] * self.config.n_layer  # initialize the KV cache for all layers
 
         for i, block in enumerate(self.transformer.h):
             #if kv_method == "local-memory":
             if kv_method in ["local-memory", "remote-memory"]:
-                x, updated_kv_value = block(x, past_key_value=kv_cache[i], kv_method=kv_method)
+                x, updated_kv_value = block(x, past_key_value=kv_cache[i])
                 kv_cache[i] = updated_kv_value  # update the KV cache for layer i
             #elif kv_method == "remote-memory":
             #    past_key_value = load_kvcache_remote(request_id, i, remote_memory_var)  # load the KV cache from remote memory
