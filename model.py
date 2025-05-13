@@ -17,6 +17,7 @@ import torch.nn as nn
 from torch.nn import functional as F
 from kvDiskSim import save_kvcache_memmap, load_kvcache_memmap
 from kvRemoteSim import load_kvcache_remote, save_kvcache_remote
+import numa_bind
 
 # For CPU monitoring
 import psutil 
@@ -196,6 +197,9 @@ class GPT(nn.Module):
         x = self.transformer.drop(tok_emb + pos_emb)
 
         if kv_method == "local-memory" and kv_cache is None:
+            kv_cache = [None] * self.config.n_layer  # initialize the KV cache for all layers
+        elif kv_method == "remote-memory" and kv_cache is None:
+            numa_bind.set_membind(remote_node)  # Set memory binding to remote NUMA node
             kv_cache = [None] * self.config.n_layer  # initialize the KV cache for all layers
 
         for i, block in enumerate(self.transformer.h):

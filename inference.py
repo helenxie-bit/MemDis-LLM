@@ -62,6 +62,7 @@ x = torch.tensor(start_ids[:input_tokens], dtype=torch.long, device=device)[None
 
 if kv_method == "remote-memory":
     numa_bind.set_membind(remote_node)  # Set memory binding to remote NUMA node
+    
 # Initialize KV cache
 #if kv_method == "local-memory":
 if kv_method in ["local-memory", "remote-memory"]:
