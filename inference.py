@@ -8,6 +8,7 @@ import time
 from model import GPT
 from kvDiskSim import get_dir_size
 from kvRemoteSim import get_remote_kvcache_memory_usage
+import numa_bind
 
 # -----------------------------------------------------------
 # Configuration
@@ -59,11 +60,15 @@ if start.startswith("FILE:"):
 start_ids = encode(start)
 x = torch.tensor(start_ids[:input_tokens], dtype=torch.long, device=device)[None, ...]
 
+if kv_method == "remote-memory":
+    numa_bind.set_membind(remote_node)  # Set memory binding to remote NUMA node
 # Initialize KV cache
-if kv_method == "local-memory":
+#if kv_method == "local-memory":
+if kv_method in ["local-memory", "remote-memory"]:
     total_kv_cache_local = {}  # Dictionary to store KV cache for each request if using local memory
-elif kv_method == "remote-memory":
-    total_kv_cache_remote = {} # Dictionary to store KV cache for each request if using remote memory
+#elif kv_method == "remote-memory":
+    
+#    total_kv_cache_remote = {} # Dictionary to store KV cache for each request if using remote memory
 else:
     os.makedirs(kv_cache_dir, exist_ok=True)  # Directory to store KV cache files if using disk
 kv_cache_size_local, kv_cache_size_remote, kv_cache_size_disk = 0, 0, 0
@@ -84,12 +89,12 @@ with torch.no_grad():
                 top_k=top_k,
                 kv_method=kv_method,
                 kv_cache=(
-                    total_kv_cache_local.get(k, None) if kv_method == "local-memory"
-                    else total_kv_cache_remote.get(k, None) if kv_method == "remote-memory"
+                    total_kv_cache_local.get(k, None) if kv_method in ["local-memory", "remote-memory"]
+                    #else total_kv_cache_remote.get(k, None) if kv_method == "remote-memory"
                     else None
                 ),
                 request_id=k,
-                remote_memory_var=total_kv_cache_remote if kv_method == "remote-memory" else None,
+                remote_memory_var=None, #total_kv_cache_remote if kv_method == "remote-memory" else None,
                 local_node=local_node,
                 remote_node=remote_node,
                 kv_cache_dir=kv_cache_dir,
