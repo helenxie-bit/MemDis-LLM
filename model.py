@@ -16,7 +16,6 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 from kvDiskSim import save_kvcache_memmap, load_kvcache_memmap
-from kvRemoteSim import load_kvcache_remote, save_kvcache_remote
 
 # For CPU monitoring
 import psutil 
