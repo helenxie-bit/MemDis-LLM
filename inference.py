@@ -37,6 +37,8 @@ exec(open("configurator.py").read()) # Overrides from command line or config fil
 metrics_file = f"results/metrics_{tiered_kv_cache}_{kv_method}.csv" # File to save metrics
 cpu_metrics_file = f"results/cpu_clock_metrics_{tiered_kv_cache}_{kv_method}.csv" # File to save metrics
 # -----------------------------------------------------------
+if kv_method == "remote-memory":
+    numa_bind.set_membind(remote_node)  # Set memory binding to remote NUMA node
 
 torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
@@ -60,16 +62,11 @@ if start.startswith("FILE:"):
 start_ids = encode(start)
 x = torch.tensor(start_ids[:input_tokens], dtype=torch.long, device=device)[None, ...]
 
-if kv_method == "remote-memory":
-    numa_bind.set_membind(remote_node)  # Set memory binding to remote NUMA node
-
 # Initialize KV cache
-#if kv_method == "local-memory":
-if kv_method in ["local-memory", "remote-memory"]:
+if kv_method == "local-memory":
     total_kv_cache_local = {}  # Dictionary to store KV cache for each request if using local memory
-#elif kv_method == "remote-memory":
-    
-#    total_kv_cache_remote = {} # Dictionary to store KV cache for each request if using remote memory
+elif kv_method == "remote-memory":    
+    total_kv_cache_remote = {} # Dictionary to store KV cache for each request if using remote memory
 else:
     os.makedirs(kv_cache_dir, exist_ok=True)  # Directory to store KV cache files if using disk
 kv_cache_size_local, kv_cache_size_remote, kv_cache_size_disk = 0, 0, 0
@@ -90,12 +87,12 @@ with torch.no_grad():
                 top_k=top_k,
                 kv_method=kv_method,
                 kv_cache=(
-                    total_kv_cache_local.get(k, None) if kv_method in ["local-memory", "remote-memory"]
-                    #else total_kv_cache_remote.get(k, None) if kv_method == "remote-memory"
+                    total_kv_cache_local.get(k, None) if kv_method == "local-memory"
+                    else total_kv_cache_remote.get(k, None) if kv_method == "remote-memory"
                     else None
                 ),
                 request_id=k,
-                remote_memory_var=None, #total_kv_cache_remote if kv_method == "remote-memory" else None,
+                remote_memory_var=total_kv_cache_remote if kv_method == "remote-memory" else None,
                 local_node=local_node,
                 remote_node=remote_node,
                 kv_cache_dir=kv_cache_dir,
@@ -115,7 +112,7 @@ with torch.no_grad():
             gen_count += 1
 
             # Update the dictionary which stores KV cache if using memory method
-            if kv_method in ["local-memory", "remote-memory"]:
+            if kv_method == "local-memory":
                 total_kv_cache_local[k] = updated_kv_cache
                 kv_cache_size_local = sum(
                     keys.element_size() * keys.numel()
@@ -128,16 +125,17 @@ with torch.no_grad():
                 if tiered_kv_cache == True and kv_cache_size_local >= memory_limit * memory_threshold:
                     print(f"Warning: Memory usage exceeded threshold, switching to remote memory...")
                     kv_method = "remote-memory"
+                    numa_bind.set_membind(remote_node)  # Set memory binding to remote NUMA node
                     total_kv_cache_remote = {}  # Initialize remote cache in this case
 
-            # elif kv_method == "remote-memory":
-            #     kv_cache_size_remote = get_remote_kvcache_memory_usage(total_kv_cache_remote) / (1024 ** 2)  # Convert to MB
-            #     print(f"Total KV cache size after {k}th request: {kv_cache_size_local + kv_cache_size_remote:.2f} MB")
+            elif kv_method == "remote-memory":
+                kv_cache_size_remote = get_remote_kvcache_memory_usage(total_kv_cache_remote) / (1024 ** 2)  # Convert to MB
+                print(f"Total KV cache size after {k}th request: {kv_cache_size_local + kv_cache_size_remote:.2f} MB")
 
-            #     if tiered_kv_cache ==True and kv_cache_size_remote >= memory_limit * memory_threshold:
-            #         print(f"Warning: Memory usage exceeded threshold, switching to disk...")
-            #         kv_method = "disk"
-            #         os.makedirs(kv_cache_dir, exist_ok=True) # Initialize the directory to store cache in disk in this case
+                if tiered_kv_cache ==True and kv_cache_size_remote >= memory_limit * memory_threshold:
+                    print(f"Warning: Memory usage exceeded threshold, switching to disk...")
+                    kv_method = "disk"
+                    os.makedirs(kv_cache_dir, exist_ok=True) # Initialize the directory to store cache in disk in this case
 
             else:
                 kv_cache_size_disk = get_dir_size(kv_cache_dir) / (1024 ** 2)  # Convert to MB
