@@ -62,7 +62,7 @@ x = torch.tensor(start_ids[:input_tokens], dtype=torch.long, device=device)[None
 
 if kv_method == "remote-memory":
     numa_bind.set_membind(remote_node)  # Set memory binding to remote NUMA node
-    
+
 # Initialize KV cache
 #if kv_method == "local-memory":
 if kv_method in ["local-memory", "remote-memory"]:
@@ -115,7 +115,7 @@ with torch.no_grad():
             gen_count += 1
 
             # Update the dictionary which stores KV cache if using memory method
-            if kv_method == "local-memory":
+            if kv_method in ["local-memory", "remote-memory"]:
                 total_kv_cache_local[k] = updated_kv_cache
                 kv_cache_size_local = sum(
                     keys.element_size() * keys.numel()
@@ -130,14 +130,14 @@ with torch.no_grad():
                     kv_method = "remote-memory"
                     total_kv_cache_remote = {}  # Initialize remote cache in this case
 
-            elif kv_method == "remote-memory":
-                kv_cache_size_remote = get_remote_kvcache_memory_usage(total_kv_cache_remote) / (1024 ** 2)  # Convert to MB
-                print(f"Total KV cache size after {k}th request: {kv_cache_size_local + kv_cache_size_remote:.2f} MB")
+            # elif kv_method == "remote-memory":
+            #     kv_cache_size_remote = get_remote_kvcache_memory_usage(total_kv_cache_remote) / (1024 ** 2)  # Convert to MB
+            #     print(f"Total KV cache size after {k}th request: {kv_cache_size_local + kv_cache_size_remote:.2f} MB")
 
-                if tiered_kv_cache ==True and kv_cache_size_remote >= memory_limit * memory_threshold:
-                    print(f"Warning: Memory usage exceeded threshold, switching to disk...")
-                    kv_method = "disk"
-                    os.makedirs(kv_cache_dir, exist_ok=True) # Initialize the directory to store cache in disk in this case
+            #     if tiered_kv_cache ==True and kv_cache_size_remote >= memory_limit * memory_threshold:
+            #         print(f"Warning: Memory usage exceeded threshold, switching to disk...")
+            #         kv_method = "disk"
+            #         os.makedirs(kv_cache_dir, exist_ok=True) # Initialize the directory to store cache in disk in this case
 
             else:
                 kv_cache_size_disk = get_dir_size(kv_cache_dir) / (1024 ** 2)  # Convert to MB

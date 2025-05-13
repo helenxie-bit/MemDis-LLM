@@ -206,6 +206,8 @@ class GPT(nn.Module):
             #if kv_method == "local-memory":
             if kv_method in ["local-memory", "remote-memory"]:
                 x, updated_kv_value = block(x, past_key_value=kv_cache[i])
+                if kv_method == "remote-memory":
+                    numa_bind.set_membind(remote_node)  # ***
                 kv_cache[i] = updated_kv_value  # update the KV cache for layer i
             #elif kv_method == "remote-memory":
             #    past_key_value = load_kvcache_remote(request_id, i, remote_memory_var)  # load the KV cache from remote memory
