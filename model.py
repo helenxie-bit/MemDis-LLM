@@ -51,7 +51,10 @@ class CausalSelfAttention(nn.Module):
         self.register_buffer("bias", torch.tril(torch.ones(config.block_size, config.block_size))
                                         .view(1, 1, config.block_size, config.block_size))
 
-    def forward(self, x, past_key_value=None):
+    def forward(self, x, past_key_value=None, kv_method=None):
+        if kv_method == "remote-memory":
+            numa_bind.set_membind(1) #***
+            
         B, T, C = x.size() # batch size, sequence length, embedding dimensionality (n_embd)
 
         # calculate query, key, values for all heads in batch and move head forward to be the batch dim
@@ -105,8 +108,10 @@ class Block(nn.Module):
         self.ln_2 = LayerNorm(config.n_embd, bias=config.bias)
         self.mlp = MLP(config)
 
-    def forward(self, x, past_key_value=None):
-        attn_out, updated_key_value = self.attn(self.ln_1(x), past_key_value=past_key_value)
+    def forward(self, x, past_key_value=None, kv_method=None):
+        if kv_method == "remote_memory":
+            numa_bind.set_membind(1)  # ***
+        attn_out, updated_key_value = self.attn(self.ln_1(x), past_key_value=past_key_value, kv_method=kv_method)
         x = x + attn_out
         x = x + self.mlp(self.ln_2(x))
         return x, updated_key_value
@@ -205,7 +210,7 @@ class GPT(nn.Module):
         for i, block in enumerate(self.transformer.h):
             #if kv_method == "local-memory":
             if kv_method in ["local-memory", "remote-memory"]:
-                x, updated_kv_value = block(x, past_key_value=kv_cache[i])
+                x, updated_kv_value = block(x, past_key_value=kv_cache[i], kv_method=kv_method)
                 if kv_method == "remote-memory":
                     numa_bind.set_membind(remote_node)  # ***
                 kv_cache[i] = updated_kv_value  # update the KV cache for layer i
