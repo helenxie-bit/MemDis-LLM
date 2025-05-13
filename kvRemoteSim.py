@@ -1,11 +1,12 @@
 import torch
-import numa
+import numa_bind
 
 # Helper: Allocate on remote NUMA node
 def allocate_on_remote_numa(shape, dtype=torch.float16, local_node=0, remote_node=1):
-    numa.set_preferred(remote_node)
+    numa_bind.set_membind(remote_node)
     tensor = torch.empty(shape, dtype=dtype)
-    numa.set_preferred(local_node)  # Reset to default NUMA node
+    tensor.fill_(0)  # Initialize to zero
+    numa_bind.set_membind(local_node)  # Reset to default NUMA node
     return tensor
 
 # Save KV Cache to Remote NUMA Node
