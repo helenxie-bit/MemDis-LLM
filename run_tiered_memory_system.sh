@@ -5,7 +5,7 @@
 # -------------------------------
 MEMORY_LIMIT_MB=1024
 MEMORY_THRESHOLD=0.7
-NUM_REQUESTS=100
+NUM_REQUESTS=30
 INFER_SCRIPT="inference.py"
 THRESHOLD_MB=$(echo "$MEMORY_LIMIT_MB * $MEMORY_THRESHOLD" | bc)
 MEMORY_TIER="local"  # Start from local tier
