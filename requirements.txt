@@ -4,3 +4,6 @@ pandas==2.2.3
 numpy==1.26.4
 transformers==4.51.3
 datasets==3.5.1
+matplotlib==3.10.3
+cython==3.1.0
+numa
