@@ -11,7 +11,6 @@ import math
 import inspect
 from dataclasses import dataclass
 
-import pandas as pd
 import time
 import torch
 import torch.nn as nn
