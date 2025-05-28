@@ -8,6 +8,7 @@ import time
 from model import GPT
 from kvDiskSim import get_dir_size
 import numa_bind
+import psutil
 
 # -----------------------------------------------------------
 # Configuration
@@ -32,6 +33,7 @@ local_node = 0
 remote_node = 1 # NUMA node to allocate on (if using remote memory)
 
 exec(open("configurator.py").read()) # Overrides from command line or config file
+
 
 metrics_file = f"results/metrics_{tiered_kv_cache}_{kv_method}.csv" # File to save metrics
 cpu_metrics_file = f"results/cpu_clock_metrics_{tiered_kv_cache}_{kv_method}.csv" # File to save metrics
@@ -72,6 +74,10 @@ kv_cache_size_local, kv_cache_size_remote, kv_cache_size_disk = 0, 0, 0
 
 gen_count = 0
 generation_cycle_times = []
+
+# Get the pid so that the psutil can start monitoring
+process = psutil.Process(os.getpid())
+
 # Generate text
 with torch.no_grad():
     with ctx:
@@ -96,6 +102,8 @@ with torch.no_grad():
             )
             # print(decode(y[0].tolist()))
             # print("=" * 40)
+
+
 
             # Take note of how much time it took
             gen_end_time = time.perf_counter()
@@ -144,11 +152,34 @@ with torch.no_grad():
                 kv_cache_size_disk = get_dir_size(kv_cache_dir) / (1024 ** 2)  # Convert to MB
                 print(f"Total KV cache size after {k}th request: {kv_cache_size_local + kv_cache_size_remote + kv_cache_size_disk:.2f} MB")
 
+            # --- Code for getting memory usage --- #
+            try:
+                # Get various data on memory usage
+                memory_info = process.memory_info()
+
+                # RSS: the amount the physical memory thjat the process is currently using (amount that is not swapperd to disk)
+                metrics["process_memory_rss_mb"] = memory_info.rss / (1024 * 1024)
+
+               # VMS: Virtual memory, which includes disk swap usage, RAM usage, etc.
+                metrics["process_memory_vms_mb"] = memory_info.vms / (1024 * 1024)
+
+
+            except psutil.AccessDenied:
+                print(f"Warning: Could not access process memory info (AccessDenied)")
+                metrics["process_memory_rss_mb"] = np.nan
+                # metrics["process_memory_vms_mb"] = np.nan
+                # metrics["process_memory_uss_mb"] = np.nan
+            except Exception as e:
+                print(f"Warning: Could not access process memory info: {e}")
+                metrics["process_memory_rss_mb"] = np.nan
+
             # Save metrics to a DataFrame and a CSV file
             metrics["model"] = init_from
             metrics_df = pd.DataFrame([metrics])
             metrics_file_exists = os.path.exists(metrics_file)
-            metrics_df.to_csv(metrics_file, mode='a', header=not metrics_file_exists, index=False) 
+            metrics_df.to_csv(metrics_file, mode='a', header=not metrics_file_exists, index=False)
+
+
             # print(metrics_df)
 
     cycle_times = pd.DataFrame(generation_cycle_times)
