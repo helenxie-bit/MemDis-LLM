@@ -16,6 +16,7 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 from kvDiskSim import save_kvcache_memmap, load_kvcache_memmap
+from tiered_kv_cache import LRUTieredKVCache
 
 # For CPU monitoring
 import psutil 
@@ -181,6 +182,7 @@ class GPT(nn.Module):
         request_id=None,
         kv_cache_dir=None,
         device=None,
+        tiered_cache_manager=None,  # New parameter for LRU tiered cache
     ):
         device = idx.device
         b, t = idx.size()
@@ -194,15 +196,23 @@ class GPT(nn.Module):
 
         if kv_method in ["local-memory", "remote-memory"] and kv_cache is None:
             kv_cache = [None] * self.config.n_layer  # initialize the KV cache for all layers
+        elif kv_method == "tiered-lru" and tiered_cache_manager is None:
+            raise ValueError("tiered_cache_manager must be provided when using tiered-lru method")
 
         for i, block in enumerate(self.transformer.h):
             if kv_method in ["local-memory", "remote-memory"]:
                 x, updated_kv_value = block(x, past_key_value=kv_cache[i])
                 kv_cache[i] = updated_kv_value  # update the KV cache for layer i
+            elif kv_method == "tiered-lru":
+                # Use LRU tiered cache
+                past_key_value = tiered_cache_manager.get(request_id, i, device)
+                x, updated_kv_value = block(x, past_key_value=past_key_value)
+                tiered_cache_manager.put(request_id, i, updated_kv_value, device)
             else:
                 past_key_value = load_kvcache_memmap(request_id, i, kv_cache_dir, device)  # load the KV cache from disk
                 x, updated_kv_value = block(x, past_key_value=past_key_value)
                 save_kvcache_memmap(request_id, i, updated_kv_value, kv_cache_dir)  # save the updated KV cache to disk
+        
         x = self.transformer.ln_f(x)
 
         if targets is not None:
@@ -339,6 +349,7 @@ class GPT(nn.Module):
         kv_cache_dir=None,
         device=None,
         is_old_conversation=False,
+        tiered_cache_manager=None,  # New parameter
     ):
         """
         Take a conditioning sequence of indices idx (LongTensor of shape (b,t)) and complete
@@ -367,6 +378,7 @@ class GPT(nn.Module):
                 request_id=request_id,
                 kv_cache_dir=kv_cache_dir,
                 device=device,
+                tiered_cache_manager=tiered_cache_manager,  # Pass the tiered cache manager
             )
             # pluck the logits at the final step and scale by desired temperature
             if temperature == 0.0:
