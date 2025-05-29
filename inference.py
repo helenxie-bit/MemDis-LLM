@@ -8,8 +8,12 @@ import time
 from model import GPT
 from kvDiskSim import get_dir_size
 import numa_bind
+<<<<<<< HEAD
 import psutil
 from workloadGen import generate_workload
+=======
+from tiered_kv_cache import LRUTieredKVCache
+>>>>>>> 8cc8730 (Update inference to add LRU eviction policy)
 
 # -----------------------------------------------------------
 # Configuration
@@ -22,11 +26,12 @@ top_k = 200 # Retain only the top k tokens with highest probability (not used if
 seed = 42 # Random seed for reproducibility
 device = "cpu" # Options: "cpu", "cuda" (if available)
 dtype = "bfloat16" if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else "float16"
-kv_method = "local-memory" # Options: "local-memory", "remote-memory", "disk"
+kv_method = "local-memory" # Options: "local-memory", "remote-memory", "disk", "tiered-lru"
 kv_cache_dir = './kv_cache_disk/'
 if kv_method == 'disk':
     os.makedirs(kv_cache_dir, exist_ok=True)
-tiered_kv_cache = False # Whether to use tiered KV cache
+tiered_kv_cache = False # Whether to use naive tiered KV cache
+lru_tiered_kv_cache = False # Whether to use LRU tiered KV cache
 memory_limit = 1024 # Configure according to your system, here we set it to 1 GB
 memory_threshold = 0.7 # Memory threshold for switching to next tier
 local_node = 0
@@ -35,11 +40,36 @@ lambda_rate = 3 # Average number of requests per second
 simulation_duration = 10 # Total duration of the simulation in seconds
 new_conv_prob = 0.7 # Probability of starting a new conversation
 
+# LRU Tiered cache configuration
+lru_local_limit_mb = 512  # Local memory limit in MB
+lru_remote_limit_mb = 1024  # Remote memory limit in MB
+lru_local_threshold = 0.8  # Local memory threshold for eviction
+lru_remote_threshold = 0.8  # Remote memory threshold for eviction
+
 exec(open("configurator.py").read()) # Overrides from command line or config file
 
+<<<<<<< HEAD
 
 metrics_file = f"results/metrics_{tiered_kv_cache}_{kv_method}_{new_conv_prob}.csv" # File to save metrics
 cpu_metrics_file = f"results/cpu_clock_metrics_{tiered_kv_cache}_{kv_method}_{new_conv_prob}.csv" # File to save metrics
+=======
+# Initialize LRU tiered cache if requested
+tiered_cache_manager = None
+if lru_tiered_kv_cache or kv_method == "tiered-lru":
+    tiered_cache_manager = LRUTieredKVCache(
+        local_limit_mb=lru_local_limit_mb,
+        remote_limit_mb=lru_remote_limit_mb,
+        local_threshold=lru_local_threshold,
+        remote_threshold=lru_remote_threshold,
+        local_node=local_node,
+        remote_node=remote_node,
+        kv_cache_dir=kv_cache_dir
+    )
+    kv_method = "tiered-lru"
+
+metrics_file = f"results/metrics_{lru_tiered_kv_cache if lru_tiered_kv_cache else tiered_kv_cache}_{kv_method}.csv"
+cpu_metrics_file = f"results/cpu_clock_metrics_{lru_tiered_kv_cache if lru_tiered_kv_cache else tiered_kv_cache}_{kv_method}.csv"
+>>>>>>> 8cc8730 (Update inference to add LRU eviction policy)
 # -----------------------------------------------------------
 if kv_method == "remote-memory":
     numa_bind.set_membind(remote_node)  # Set memory binding to remote NUMA node
@@ -123,10 +153,12 @@ with torch.no_grad():
                 request_id=request_id,
                 kv_cache_dir=kv_cache_dir,
                 device=device,
+<<<<<<< HEAD
                 is_old_conversation=is_old_conversation,
+=======
+                tiered_cache_manager=tiered_cache_manager,  # Pass the LRU cache manager
+>>>>>>> 8cc8730 (Update inference to add LRU eviction policy)
             )
-            # print(decode(y[0].tolist()))
-            # print("=" * 40)
 
             # Take note of how much time it took
             gen_end_time = time.perf_counter()
@@ -138,9 +170,26 @@ with torch.no_grad():
             })
             gen_count += 1
 
+<<<<<<< HEAD
             # Update the dictionary which stores KV cache if using memory method
             if kv_method == "local-memory":
                 total_kv_cache_local[request_id] = updated_kv_cache
+=======
+            # Handle different cache methods
+            if kv_method == "tiered-lru":
+                # Print cache statistics
+                stats = tiered_cache_manager.get_stats()
+                print(f"Request {k} - Cache Stats:")
+                print(f"  Local: {stats['local_size_mb']:.2f}MB ({stats['local_count']} items, {stats['local_utilization']:.1%} util)")
+                print(f"  Remote: {stats['remote_size_mb']:.2f}MB ({stats['remote_count']} items, {stats['remote_utilization']:.1%} util)")
+                print(f"  Disk: {stats['disk_count']} items")
+                
+                total_size_mb = stats['local_size_mb'] + stats['remote_size_mb']
+                print(f"Total KV cache size after {k}th request: {total_size_mb:.2f} MB")
+
+            elif kv_method == "local-memory":
+                total_kv_cache_local[k] = updated_kv_cache
+>>>>>>> 8cc8730 (Update inference to add LRU eviction policy)
                 kv_cache_size_local = sum(
                     keys.element_size() * keys.numel()
                     + values.element_size() * values.numel()
@@ -197,17 +246,35 @@ with torch.no_grad():
 
             # Save metrics to a DataFrame and a CSV file
             metrics["model"] = init_from
+            
+            # Add cache statistics for LRU tiered cache
+            if kv_method == "tiered-lru":
+                stats = tiered_cache_manager.get_stats()
+                metrics.update({
+                    "local_cache_size_mb": stats['local_size_mb'],
+                    "remote_cache_size_mb": stats['remote_size_mb'],
+                    "disk_cache_count": stats['disk_count'],
+                    "local_cache_utilization": stats['local_utilization'],
+                    "remote_cache_utilization": stats['remote_utilization'],
+                })
+            
             metrics_df = pd.DataFrame([metrics])
             metrics_file_exists = os.path.exists(metrics_file)
+<<<<<<< HEAD
             metrics_df.to_csv(metrics_file, mode='a', header=not metrics_file_exists, index=False)
             # print(metrics_df)
+=======
+            metrics_df.to_csv(metrics_file, mode='a', header=not metrics_file_exists, index=False) 
+>>>>>>> 8cc8730 (Update inference to add LRU eviction policy)
 
     cycle_times = pd.DataFrame(generation_cycle_times)
     cycle_times.to_csv(cpu_metrics_file, index=False)
     #print(generation_cycle_times)
 
-# kv-cache cleanup
-if kv_method == "disk" and os.path.isdir(kv_cache_dir) and "kv_cache_disk" in kv_cache_dir:
+# Cleanup
+if tiered_cache_manager:
+    tiered_cache_manager.cleanup()
+elif kv_method == "disk" and os.path.isdir(kv_cache_dir) and "kv_cache_disk" in kv_cache_dir:
     for root, _, files in os.walk(kv_cache_dir, topdown=False):
         for file in files:
             os.remove(os.path.join(root, file))
