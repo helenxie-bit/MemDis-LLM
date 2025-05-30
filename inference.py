@@ -41,7 +41,7 @@ simulation_duration = 10 # Total duration of the simulation in seconds
 new_conv_prob = 0.7 # Probability of starting a new conversation
 
 # LRU Tiered cache configuration
-lru_local_limit_mb = 512  # Local memory limit in MB
+lru_local_limit_mb = 1024  # Local memory limit in MB
 lru_remote_limit_mb = 1024  # Remote memory limit in MB
 lru_local_threshold = 0.8  # Local memory threshold for eviction
 lru_remote_threshold = 0.8  # Remote memory threshold for eviction
