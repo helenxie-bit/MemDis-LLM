@@ -50,6 +50,7 @@ ctx = nullcontext() if device == "cpu" else torch.amp.autocast(device_type=devic
 def get_numastat(pid):
     try:
         result = subprocess.run(["numastat", "-p", str(pid)], capture_output=True, text=True, check=True)
+        print(f"NUMA statistics for PID {pid}:\n{result.stdout}")
         lines = result.stdout.splitlines()
         header = lines[1].split()
         values = lines[2].split()
@@ -187,6 +188,7 @@ with torch.no_grad():
                 metrics["process_memory_rss_mb"] = np.nan
             
             pid = process.pid
+            print(f"Process ID: {pid}")
             metrics["numa_memory_usage"] = get_numastat(pid)
 
             # Save metrics to a DataFrame and a CSV file
