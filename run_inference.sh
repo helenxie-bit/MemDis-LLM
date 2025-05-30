@@ -27,4 +27,7 @@ numactl --cpunodebind=0 python inference.py --kv_method=disk --lambda_rate=3 --s
 echo "=== Step 8: Running inference (tiered memory) ==="
 numactl --cpunodebind=0 python inference.py --tiered_kv_cache=True --lambda_rate=3 --simulation_duration=10 --new_conv_prob=0.7
 
+echo "=== Step 9: Running inference (LRU Eviction) ==="
+numactl --cpunodebind=0 python inference.py --kv_method=tiered-lru --lru_tiered_kv_cache=True --num_requests=30
+
 echo "=== All experiments completed ==="
