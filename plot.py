@@ -9,15 +9,15 @@ os.makedirs(output_dir, exist_ok=True)
 
 # CSVs to calculate averages from
 avg_filenames = [
-    "metrics_False_local-memory.csv",
-    "metrics_False_remote-memory.csv",
-    "metrics_False_disk.csv"
+    "metrics_False_local-memory_0.7.csv",
+    "metrics_False_remote-memory_0.7.csv",
+    "metrics_False_disk_0.7.csv"
 ]
 
 # CSVs to compare line plots
 lineplot_files = {
-    "Tiered Memory System": "metrics_True_local-memory.csv",
-    "Disk-Based Offloading": "metrics_False_disk.csv"
+    "Tiered Memory System": "metrics_True_local-memory_0.7.csv",
+    "LRU Memory System": "metrics_True_tiered-lru_0.7.csv"
 }
 
 # Metrics and labels
