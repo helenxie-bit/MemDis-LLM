@@ -38,7 +38,7 @@ simulation_duration = 10 # Total duration of the simulation in seconds
 new_conv_prob = 0.7 # Probability of starting a new conversation
 
 # LRU Tiered cache configuration
-lru_local_limit_mb = 512  # Local memory limit in MB
+lru_local_limit_mb = 1024  # Local memory limit in MB
 lru_remote_limit_mb = 1024  # Remote memory limit in MB
 lru_local_threshold = 0.8  # Local memory threshold for eviction
 lru_remote_threshold = 0.8  # Remote memory threshold for eviction
@@ -59,8 +59,8 @@ if lru_tiered_kv_cache or kv_method == "tiered-lru":
     )
     kv_method = "tiered-lru"
 
-metrics_file = f"results/metrics_{lru_tiered_kv_cache if lru_tiered_kv_cache else tiered_kv_cache}_{kv_method}_{new_conv_prob}.csv.csv"
-cpu_metrics_file = f"results/cpu_clock_metrics_{lru_tiered_kv_cache if lru_tiered_kv_cache else tiered_kv_cache}_{kv_method}_{new_conv_prob}.csv.csv"
+metrics_file = f"results/metrics_{lru_tiered_kv_cache if lru_tiered_kv_cache else tiered_kv_cache}_{kv_method}_{new_conv_prob}.csv"
+cpu_metrics_file = f"results/cpu_clock_metrics_{lru_tiered_kv_cache if lru_tiered_kv_cache else tiered_kv_cache}_{kv_method}_{new_conv_prob}.csv"
 # -----------------------------------------------------------
 if kv_method == "remote-memory":
     numa_bind.set_membind(remote_node)  # Set memory binding to remote NUMA node
@@ -162,13 +162,13 @@ with torch.no_grad():
             if kv_method == "tiered-lru":
                 # Print cache statistics
                 stats = tiered_cache_manager.get_stats()
-                print(f"Request {k} - Cache Stats:")
+                print(f"Request {request_id} - Cache Stats:")
                 print(f"  Local: {stats['local_size_mb']:.2f}MB ({stats['local_count']} items, {stats['local_utilization']:.1%} util)")
                 print(f"  Remote: {stats['remote_size_mb']:.2f}MB ({stats['remote_count']} items, {stats['remote_utilization']:.1%} util)")
                 print(f"  Disk: {stats['disk_count']} items")
                 
                 total_size_mb = stats['local_size_mb'] + stats['remote_size_mb']
-                print(f"Total KV cache size after {k}th request: {total_size_mb:.2f} MB")
+                print(f"Total KV cache size after {request_id}th request: {total_size_mb:.2f} MB")
 
             elif kv_method == "local-memory":
                 total_kv_cache_local[request_id] = updated_kv_cache
