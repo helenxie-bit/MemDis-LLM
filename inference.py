@@ -9,6 +9,7 @@ from model import GPT
 from kvDiskSim import get_dir_size
 import numa_bind
 import psutil
+import subprocess
 
 # -----------------------------------------------------------
 # Configuration
@@ -45,6 +46,18 @@ torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
 ptdtype = {"float16": torch.float16, "bfloat16": torch.bfloat16, "float32": torch.float32}[dtype]
 ctx = nullcontext() if device == "cpu" else torch.amp.autocast(device_type=device, dtype=ptdtype)
+
+def get_numastat(pid):
+    try:
+        result = subprocess.run(["numastat", "-p", str(pid)], capture_output=True, text=True, check=True)
+        lines = result.stdout.splitlines()
+        header = lines[1].split()
+        values = lines[2].split()
+        numa_usage = dict(zip(header[1:], map(int, values[1:])))
+        return numa_usage
+    except Exception as e:
+        print(f"Error reading numastat: {e}")
+        return {}
 
 # Load pretrained model
 model = GPT.from_pretrained(init_from, dict(dropout=0.0))
@@ -172,6 +185,9 @@ with torch.no_grad():
             except Exception as e:
                 print(f"Warning: Could not access process memory info: {e}")
                 metrics["process_memory_rss_mb"] = np.nan
+            
+            pid = process.pid
+            metrics["numa_memory_usage"] = get_numastat(pid)
 
             # Save metrics to a DataFrame and a CSV file
             metrics["model"] = init_from
