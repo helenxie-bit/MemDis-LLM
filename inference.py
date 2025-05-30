@@ -152,6 +152,26 @@ with torch.no_grad():
                 kv_cache_size_disk = get_dir_size(kv_cache_dir) / (1024 ** 2)  # Convert to MB
                 print(f"Total KV cache size after {k}th request: {kv_cache_size_local + kv_cache_size_remote + kv_cache_size_disk:.2f} MB")
 
+            # --- Code for getting memory usage --- #
+            try:
+                # Get various data on memory usage
+                memory_info = process.memory_info()
+
+                # RSS: the amount the physical memory thjat the process is currently using (amount that is not swapperd to disk)
+                metrics["process_memory_rss_mb"] = memory_info.rss / (1024 * 1024)
+
+               # VMS: Virtual memory, which includes disk swap usage, RAM usage, etc.
+                metrics["process_memory_vms_mb"] = memory_info.vms / (1024 * 1024)
+
+
+            except psutil.AccessDenied:
+                print(f"Warning: Could not access process memory info (AccessDenied)")
+                metrics["process_memory_rss_mb"] = np.nan
+                # metrics["process_memory_vms_mb"] = np.nan
+                # metrics["process_memory_uss_mb"] = np.nan
+            except Exception as e:
+                print(f"Warning: Could not access process memory info: {e}")
+                metrics["process_memory_rss_mb"] = np.nan
 
             # Save metrics to a DataFrame and a CSV file
             metrics["model"] = init_from
