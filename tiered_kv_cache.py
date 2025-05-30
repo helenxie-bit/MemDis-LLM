@@ -74,11 +74,11 @@ class LRUTieredKVCache:
     
     def _evict_from_local_to_remote(self, device):
         """Evict LRU items from local to remote memory."""
-        print(f"Evicting from local to remote memory...")
+        #print(f"Evicting from local to remote memory...")
         self._move_to_numa_node(self.remote_node)
         
         # Evict until we're below threshold
-        target_size = self.local_limit_mb * self.local_threshold * 0.9  # Leave some buffer
+        target_size = self.local_limit_mb * self.local_threshold  # Leave some buffer
         
         while self.local_size_mb > target_size and self.local_cache:
             # Get least recently used item (first in OrderedDict)
@@ -95,16 +95,16 @@ class LRUTieredKVCache:
                 self.remote_size_mb += size_mb
             
             self.local_size_mb -= size_mb
-            print(f"Moved {key} from local to remote. Local: {self.local_size_mb:.2f}MB")
+            #print(f"Moved {key} from local to remote. Local: {self.local_size_mb:.2f}MB")
         
         self._move_to_numa_node(self.local_node)
     
     def _evict_from_remote_to_disk(self):
         """Evict LRU items from remote to disk."""
-        print(f"Evicting from remote to disk...")
+        #print(f"Evicting from remote to disk...")
         
         # Evict until we're below threshold
-        target_size = self.remote_limit_mb * self.remote_threshold * 0.9
+        target_size = self.remote_limit_mb * self.remote_threshold 
         
         while self.remote_size_mb > target_size and self.remote_cache:
             # Get least recently used item
@@ -118,7 +118,7 @@ class LRUTieredKVCache:
                 self.disk_cache.add(key)
             
             self.remote_size_mb -= size_mb
-            print(f"Moved {key} from remote to disk. Remote: {self.remote_size_mb:.2f}MB")
+            #print(f"Moved {key} from remote to disk. Remote: {self.remote_size_mb:.2f}MB")
     
     def get(self, request_id, layer_id, device):
         """
@@ -132,7 +132,7 @@ class LRUTieredKVCache:
             # Move to end (mark as recently used)
             kv_tuple = self.local_cache.pop(key)
             self.local_cache[key] = kv_tuple
-            print(f"Cache hit: local memory for {key}")
+            #print(f"Cache hit: local memory for {key}")
             return kv_tuple
         
         # Check remote cache
@@ -152,13 +152,13 @@ class LRUTieredKVCache:
                     values = values.to(device)
                     self.local_cache[key] = (keys, values)
                     self.local_size_mb += size_mb
-                    print(f"Cache hit: promoted {key} from remote to local")
+                    #print(f"Cache hit: promoted {key} from remote to local")
                     return (keys, values)
             else:
                 # Keep in remote but mark as recently used
                 self.remote_cache[key] = kv_tuple
                 self.remote_size_mb += size_mb
-                print(f"Cache hit: remote memory for {key}")
+                #print(f"Cache hit: remote memory for {key}")
                 self._move_to_numa_node(self.local_node)
                 return kv_tuple
         
@@ -179,17 +179,17 @@ class LRUTieredKVCache:
                     values = values.to(device)
                     self.remote_cache[key] = (keys, values)
                     self.remote_size_mb += size_mb
-                    print(f"Cache hit: promoted {key} from disk to remote")
+                    #print(f"Cache hit: promoted {key} from disk to remote")
                     self._move_to_numa_node(self.local_node)
                     return (keys, values)
                 else:
                     # If remote is full, keep on disk but still return the data
                     self.disk_cache.add(key)  # Put back in disk cache
-                    print(f"Cache hit: disk storage for {key} (remote full)")
+                    #print(f"Cache hit: disk storage for {key} (remote full)")
                     return kv_tuple
             
         # Cache miss - return None
-        print(f"Cache miss for {key}")
+        #print(f"Cache miss for {key}")
         return None
     
     def put(self, request_id, layer_id, kv_tuple, device):
@@ -207,7 +207,7 @@ class LRUTieredKVCache:
             self._move_to_numa_node(self.local_node)
             self.local_cache[key] = kv_tuple
             self.local_size_mb += size_mb
-            print(f"Stored {key} in local memory. Size: {self.local_size_mb:.2f}MB")
+            #print(f"Stored {key} in local memory. Size: {self.local_size_mb:.2f}MB")
             return
         
         # Local is full, try eviction
@@ -219,7 +219,7 @@ class LRUTieredKVCache:
                 self._move_to_numa_node(self.local_node)
                 self.local_cache[key] = kv_tuple
                 self.local_size_mb += size_mb
-                print(f"Stored {key} in local memory after eviction. Size: {self.local_size_mb:.2f}MB")
+                #print(f"Stored {key} in local memory after eviction. Size: {self.local_size_mb:.2f}MB")
                 return
         
         # Store in remote memory
@@ -231,7 +231,7 @@ class LRUTieredKVCache:
                 values = values.to(device)
                 self.remote_cache[key] = (keys, values)
                 self.remote_size_mb += size_mb
-                print(f"Stored {key} in remote memory. Size: {self.remote_size_mb:.2f}MB")
+                #print(f"Stored {key} in remote memory. Size: {self.remote_size_mb:.2f}MB")
                 self._move_to_numa_node(self.local_node)
                 return
         
@@ -248,7 +248,7 @@ class LRUTieredKVCache:
                     values = values.to(device)
                     self.remote_cache[key] = (keys, values)
                     self.remote_size_mb += size_mb
-                    print(f"Stored {key} in remote memory after eviction. Size: {self.remote_size_mb:.2f}MB")
+                    #print(f"Stored {key} in remote memory after eviction. Size: {self.remote_size_mb:.2f}MB")
                     self._move_to_numa_node(self.local_node)
                     return
         
@@ -256,7 +256,7 @@ class LRUTieredKVCache:
         if kv_tuple is not None:
             save_kvcache_memmap(request_id, layer_id, kv_tuple, self.kv_cache_dir)
             self.disk_cache.add(key)
-            print(f"Stored {key} on disk")
+            #print(f"Stored {key} on disk")
     
     def _remove_key(self, key):
         """Remove key from all tiers if it exists."""
