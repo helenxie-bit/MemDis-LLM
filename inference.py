@@ -169,6 +169,7 @@ with torch.no_grad():
                     print(f"Warning: Memory usage exceeded threshold, switching to local memory...")
                     #kv_method = "disk"
                     kv_method = "local-memory"
+                    total_kv_cache_local = {}
                     numa_bind.set_membind(local_node)  # Set memory binding to local NUMA node
                     os.makedirs(kv_cache_dir, exist_ok=True) # Initialize the directory to store cache in disk in this case
             
