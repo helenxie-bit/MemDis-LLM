@@ -138,23 +138,23 @@ with torch.no_grad():
             gen_count += 1
 
             # Update the dictionary which stores KV cache if using memory method
-            if kv_method == "local-memory":
-                total_kv_cache_local[k] = updated_kv_cache
-                kv_cache_size_local = sum(
-                    keys.element_size() * keys.numel()
-                    + values.element_size() * values.numel()
-                    for tensor_list in total_kv_cache_local.values()
-                    for keys, values in tensor_list
-                ) / (1024 ** 2)  # Convert to MB
-                print(f"Total KV cache size after {k}th request: {kv_cache_size_local:.2f} MB")
+            # if kv_method == "local-memory":
+            #     total_kv_cache_local[k] = updated_kv_cache
+            #     kv_cache_size_local = sum(
+            #         keys.element_size() * keys.numel()
+            #         + values.element_size() * values.numel()
+            #         for tensor_list in total_kv_cache_local.values()
+            #         for keys, values in tensor_list
+            #     ) / (1024 ** 2)  # Convert to MB
+            #     print(f"Total KV cache size after {k}th request: {kv_cache_size_local:.2f} MB")
 
-                if tiered_kv_cache == True and kv_cache_size_local >= memory_limit * memory_threshold:
-                    print(f"Warning: Memory usage exceeded threshold, switching to remote memory...")
-                    kv_method = "remote-memory"
-                    numa_bind.set_membind(remote_node)  # Set memory binding to remote NUMA node
-                    total_kv_cache_remote = {}  # Initialize remote cache in this case
+            #     if tiered_kv_cache == True and kv_cache_size_local >= memory_limit * memory_threshold:
+            #         print(f"Warning: Memory usage exceeded threshold, switching to remote memory...")
+            #         kv_method = "remote-memory"
+            #         numa_bind.set_membind(remote_node)  # Set memory binding to remote NUMA node
+            #         total_kv_cache_remote = {}  # Initialize remote cache in this case
 
-            elif kv_method == "remote-memory":
+            if kv_method == "remote-memory":
                 total_kv_cache_remote[k] = updated_kv_cache
                 kv_cache_size_remote = sum(
                     keys.element_size() * keys.numel()
@@ -165,10 +165,28 @@ with torch.no_grad():
                 print(f"Total KV cache size after {k}th request: {kv_cache_size_local + kv_cache_size_remote:.2f} MB")
 
                 if tiered_kv_cache ==True and kv_cache_size_remote >= memory_limit * memory_threshold:
-                    print(f"Warning: Memory usage exceeded threshold, switching to disk...")
-                    kv_method = "disk"
+                    #print(f"Warning: Memory usage exceeded threshold, switching to disk...")
+                    print(f"Warning: Memory usage exceeded threshold, switching to local memory...")
+                    #kv_method = "disk"
+                    kv_method = "local-memory"
                     numa_bind.set_membind(local_node)  # Set memory binding to local NUMA node
                     os.makedirs(kv_cache_dir, exist_ok=True) # Initialize the directory to store cache in disk in this case
+            
+            elif kv_method == "local-memory":
+                total_kv_cache_local[k] = updated_kv_cache
+                kv_cache_size_local = sum(
+                    keys.element_size() * keys.numel()
+                    + values.element_size() * values.numel()
+                    for tensor_list in total_kv_cache_local.values()
+                    for keys, values in tensor_list
+                ) / (1024 ** 2)  # Convert to MB
+                print(f"Total KV cache size after {k}th request: {kv_cache_size_local:.2f} MB")
+
+                if tiered_kv_cache == True and kv_cache_size_local >= memory_limit * memory_threshold:
+                    print(f"Warning: Memory usage exceeded threshold, switching to disk...")
+                    kv_method = "disk"
+                    #numa_bind.set_membind(remote_node)  # Set memory binding to remote NUMA node
+                    total_kv_cache_remote = {}  # Initialize remote cache in this case
 
             else:
                 kv_cache_size_disk = get_dir_size(kv_cache_dir) / (1024 ** 2)  # Convert to MB
@@ -196,7 +214,7 @@ with torch.no_grad():
                 metrics["process_memory_rss_mb"] = np.nan
             
             pid = process.pid
-            print(f"Process ID: {pid}")
+            #print(f"Process ID: {pid}")
             metrics["numa_memory_usage"] = get_numastat(pid)
 
             # Save metrics to a DataFrame and a CSV file
