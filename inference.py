@@ -35,7 +35,7 @@ local_node = 0
 remote_node = 1 # NUMA node to allocate on (if using remote memory)
 
 # LRU Tiered cache configuration
-lru_local_limit_mb = 512  # Local memory limit in MB
+lru_local_limit_mb = 1024  # Local memory limit in MB
 lru_remote_limit_mb = 1024  # Remote memory limit in MB
 lru_local_threshold = 0.8  # Local memory threshold for eviction
 lru_remote_threshold = 0.8  # Remote memory threshold for eviction
@@ -160,13 +160,13 @@ with torch.no_grad():
             if kv_method == "tiered-lru":
                 # Print cache statistics
                 stats = tiered_cache_manager.get_stats()
-                print(f"Request {k} - Cache Stats:")
+                print(f"Request {request_id} - Cache Stats:")
                 print(f"  Local: {stats['local_size_mb']:.2f}MB ({stats['local_count']} items, {stats['local_utilization']:.1%} util)")
                 print(f"  Remote: {stats['remote_size_mb']:.2f}MB ({stats['remote_count']} items, {stats['remote_utilization']:.1%} util)")
                 print(f"  Disk: {stats['disk_count']} items")
                 
                 total_size_mb = stats['local_size_mb'] + stats['remote_size_mb']
-                print(f"Total KV cache size after {k}th request: {total_size_mb:.2f} MB")
+                print(f"Total KV cache size after {request_id}th request: {total_size_mb:.2f} MB")
 
             elif kv_method == "local-memory":
                 total_kv_cache_local[request_id] = updated_kv_cache
