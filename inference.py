@@ -15,8 +15,7 @@ from workloadGen import generate_workload
 # Configuration
 init_from = "gpt2" # Options: "gpt2", "gpt2-medium", "gpt2-large", "gpt2-xl"
 start = "FILE:data/input.txt" # Prompt to start text generation from (can also specify a file, use as: "FILE:prompt.txt")
-num_requests = 10
-input_tokens = 1000
+input_tokens = 500
 max_new_tokens = 20
 temperature = 0.0 # In order to get deterministic results for reproduction, set temperature to 0.0
 top_k = 200 # Retain only the top k tokens with highest probability (not used if temperature==0.0)
@@ -32,15 +31,15 @@ memory_limit = 1024 # Configure according to your system, here we set it to 1 GB
 memory_threshold = 0.7 # Memory threshold for switching to next tier
 local_node = 0
 remote_node = 1 # NUMA node to allocate on (if using remote memory)
-lambda_rate = 5 # Average number of requests per second
+lambda_rate = 3 # Average number of requests per second
 simulation_duration = 10 # Total duration of the simulation in seconds
 new_conv_prob = 0.7 # Probability of starting a new conversation
 
 exec(open("configurator.py").read()) # Overrides from command line or config file
 
 
-metrics_file = f"results/metrics_{tiered_kv_cache}_{kv_method}.csv" # File to save metrics
-cpu_metrics_file = f"results/cpu_clock_metrics_{tiered_kv_cache}_{kv_method}.csv" # File to save metrics
+metrics_file = f"results/metrics_{tiered_kv_cache}_{kv_method}_{new_conv_prob}.csv" # File to save metrics
+cpu_metrics_file = f"results/cpu_clock_metrics_{tiered_kv_cache}_{kv_method}_{new_conv_prob}.csv" # File to save metrics
 # -----------------------------------------------------------
 if kv_method == "remote-memory":
     numa_bind.set_membind(remote_node)  # Set memory binding to remote NUMA node
@@ -86,6 +85,7 @@ generation_cycle_times = []
 # Get the pid so that the psutil can start monitoring
 process = psutil.Process(os.getpid())
 
+processed_requests = []
 start_time = time.perf_counter() # Reference time
 # Generate text
 with torch.no_grad():
@@ -102,6 +102,12 @@ with torch.no_grad():
                 time.sleep(wait_time)
             
             request_id = request["request_id"]
+            if request_id in processed_requests:
+                is_old_conversation = True
+            else:
+                is_old_conversation = False
+                processed_requests.append(request_id)
+            print(f"📌 Request ID: {request_id}, Old Conversation: {is_old_conversation}")
 
             y, updated_kv_cache, metrics = model.generate(
                 x,
@@ -117,6 +123,7 @@ with torch.no_grad():
                 request_id=request_id,
                 kv_cache_dir=kv_cache_dir,
                 device=device,
+                is_old_conversation=is_old_conversation,
             )
             # print(decode(y[0].tolist()))
             # print("=" * 40)
@@ -197,7 +204,7 @@ with torch.no_grad():
 
     cycle_times = pd.DataFrame(generation_cycle_times)
     cycle_times.to_csv(cpu_metrics_file, index=False)
-    print(generation_cycle_times)
+    #print(generation_cycle_times)
 
 # kv-cache cleanup
 if kv_method == "disk" and os.path.isdir(kv_cache_dir) and "kv_cache_disk" in kv_cache_dir:
