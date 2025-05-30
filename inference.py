@@ -50,12 +50,20 @@ ctx = nullcontext() if device == "cpu" else torch.amp.autocast(device_type=devic
 def get_numastat(pid):
     try:
         result = subprocess.run(["numastat", "-p", str(pid)], capture_output=True, text=True, check=True)
-        print(f"NUMA statistics for PID {pid}:\n{result.stdout}")
+        #print(f"NUMA statistics for PID {pid}:\n{result.stdout}")
         lines = result.stdout.splitlines()
-        header = lines[1].split()
-        values = lines[2].split()
-        numa_usage = dict(zip(header[1:], map(int, values[1:])))
-        return numa_usage
+        for line in lines:
+            if line.strip().startswith("Total"):
+                parts = line.split()
+                # Assuming format: 'Total', <Node0>, <Node1>, <Total>
+                return {
+                    "Node0_MB": float(parts[1]),
+                    "Node1_MB": float(parts[2]),
+                    "Total_MB": float(parts[3])
+                }
+
+        print("Could not find 'Total' line in numastat output.")
+        return {}
     except Exception as e:
         print(f"Error reading numastat: {e}")
         return {}
