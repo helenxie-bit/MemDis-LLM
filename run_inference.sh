@@ -31,6 +31,6 @@ echo "=== Step 9: Running inference (tiered memory) ==="
 numactl --cpunodebind=0 python inference.py --tiered_kv_cache=True
 
 echo "=== Step 9: Running inference (LRU Eviction) ==="
-numactl --cpunodebind=0 python inference.py --kv_method=tiered-lru --lru_tiered_kv_cache=True --num_requests=30
+numactl --cpunodebind=0 python inference.py --kv_method=tiered-lru --lru_tiered_kv_cache=True --lambda_rate=3 --simulation_duration=10 --new_conv_prob=0.7
 
 echo "=== All experiments completed ==="
