@@ -9,7 +9,7 @@ from model import GPT
 from kvDiskSim import get_dir_size
 import numa_bind
 import psutil
-import subprocess
+from memoryMonitor import get_numastat
 
 # -----------------------------------------------------------
 # Configuration
@@ -47,27 +47,6 @@ torch.cuda.manual_seed(seed)
 ptdtype = {"float16": torch.float16, "bfloat16": torch.bfloat16, "float32": torch.float32}[dtype]
 ctx = nullcontext() if device == "cpu" else torch.amp.autocast(device_type=device, dtype=ptdtype)
 
-def get_numastat(pid):
-    try:
-        result = subprocess.run(["numastat", "-p", str(pid)], capture_output=True, text=True, check=True)
-        #print(f"NUMA statistics for PID {pid}:\n{result.stdout}")
-        lines = result.stdout.splitlines()
-        for line in lines:
-            if line.strip().startswith("Total"):
-                parts = line.split()
-                # Assuming format: 'Total', <Node0>, <Node1>, <Total>
-                return {
-                    "Node0_MB": float(parts[1]),
-                    "Node1_MB": float(parts[2]),
-                    "Total_MB": float(parts[3])
-                }
-
-        print("Could not find 'Total' line in numastat output.")
-        return {}
-    except Exception as e:
-        print(f"Error reading numastat: {e}")
-        return {}
-
 # Load pretrained model
 model = GPT.from_pretrained(init_from, dict(dropout=0.0))
 model.eval()
@@ -99,6 +78,9 @@ generation_cycle_times = []
 
 # Get the pid so that the psutil can start monitoring
 process = psutil.Process(os.getpid())
+# Get initial memory usage
+init_total_memory = get_numastat(process.pid)["Total_MB"]
+used_local_memory, used_remote_memory = 0, 0
 
 # Generate text
 with torch.no_grad():
@@ -106,11 +88,6 @@ with torch.no_grad():
         for k in range(num_requests):
             # Measuring NUMA performace: we measure wall clock time between each generate() function to see if clock times went down
             gen_start_time = time.perf_counter()
-
-            if kv_method == "remote-memory":
-                numa_bind.set_membind(remote_node)  # Set memory binding to local NUMA node
-            else:
-                numa_bind.set_membind(local_node)
 
             y, updated_kv_cache, metrics = model.generate(
                 x,
@@ -129,8 +106,6 @@ with torch.no_grad():
             )
             # print(decode(y[0].tolist()))
             # print("=" * 40)
-
-
 
             # Take note of how much time it took
             gen_end_time = time.perf_counter()
@@ -153,13 +128,17 @@ with torch.no_grad():
                 ) / (1024 ** 2)  # Convert to MB
                 print(f"Total KV cache size after {k}th request: {kv_cache_size_local:.2f} MB")
 
-                if tiered_kv_cache == True and kv_cache_size_local >= memory_limit * memory_threshold:
+                curr_total_memory = get_numastat(process.pid)["Total_MB"]
+                used_local_memory = curr_total_memory - init_total_memory
+                print(f"Used local memory: {used_local_memory:.2f} MB")
+
+                if tiered_kv_cache == True and used_local_memory >= memory_limit * memory_threshold:
                     print(f"Warning: Memory usage exceeded threshold, switching to remote memory...")
                     kv_method = "remote-memory"
                     numa_bind.set_membind(remote_node)  # Set memory binding to remote NUMA node
                     total_kv_cache_remote = {}  # Initialize remote cache in this case
 
-            if kv_method == "remote-memory":
+            elif kv_method == "remote-memory":
                 total_kv_cache_remote[k] = updated_kv_cache
                 kv_cache_size_remote = sum(
                     keys.element_size() * keys.numel()
@@ -169,7 +148,11 @@ with torch.no_grad():
                 ) / (1024 ** 2)
                 print(f"Total KV cache size after {k}th request: {kv_cache_size_local + kv_cache_size_remote:.2f} MB")
 
-                if tiered_kv_cache ==True and kv_cache_size_remote >= memory_limit * memory_threshold:
+                curr_total_memory = get_numastat(process.pid)["Total_MB"]
+                used_remote_memory = curr_total_memory - init_total_memory - used_local_memory
+                print(f"Used remote memory: {used_remote_memory:.2f} MB")
+
+                if tiered_kv_cache ==True and used_remote_memory >= memory_limit * memory_threshold:
                     print(f"Warning: Memory usage exceeded threshold, switching to disk...")
                     kv_method = "disk"
                     numa_bind.set_membind(local_node)  # Set memory binding to local NUMA node
@@ -179,38 +162,11 @@ with torch.no_grad():
                 kv_cache_size_disk = get_dir_size(kv_cache_dir) / (1024 ** 2)  # Convert to MB
                 print(f"Total KV cache size after {k}th request: {kv_cache_size_local + kv_cache_size_remote + kv_cache_size_disk:.2f} MB")
 
-            # --- Code for getting memory usage --- #
-            try:
-                # Get various data on memory usage
-                memory_info = process.memory_info()
-
-                # RSS: the amount the physical memory thjat the process is currently using (amount that is not swapperd to disk)
-                metrics["process_memory_rss_mb"] = memory_info.rss / (1024 * 1024)
-
-               # VMS: Virtual memory, which includes disk swap usage, RAM usage, etc.
-                metrics["process_memory_vms_mb"] = memory_info.vms / (1024 * 1024)
-
-
-            except psutil.AccessDenied:
-                print(f"Warning: Could not access process memory info (AccessDenied)")
-                metrics["process_memory_rss_mb"] = np.nan
-                # metrics["process_memory_vms_mb"] = np.nan
-                # metrics["process_memory_uss_mb"] = np.nan
-            except Exception as e:
-                print(f"Warning: Could not access process memory info: {e}")
-                metrics["process_memory_rss_mb"] = np.nan
-            
-            pid = process.pid
-            #print(f"Process ID: {pid}")
-            metrics["numa_memory_usage"] = get_numastat(pid)
-
             # Save metrics to a DataFrame and a CSV file
             metrics["model"] = init_from
             metrics_df = pd.DataFrame([metrics])
             metrics_file_exists = os.path.exists(metrics_file)
             metrics_df.to_csv(metrics_file, mode='a', header=not metrics_file_exists, index=False)
-
-
             # print(metrics_df)
 
     cycle_times = pd.DataFrame(generation_cycle_times)
