@@ -1,3 +1,5 @@
+import argparse
+import json
 import numpy as np
 import random
 
@@ -40,3 +42,25 @@ def generate_workload(lambda_rate, simulation_duration, new_conv_prob):
         })
 
     return requests
+
+def main():
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description="Generate synthetic workload")
+    parser.add_argument("--lambda_rate", type=float, default=1.0, help="Average number of requests per second.")
+    parser.add_argument("--simulation_duration", type=int, default=60, help="Total duration of the simulation in seconds.")
+    parser.add_argument("--new_conv_prob", type=float, default=0.5, help="Probability of starting a new conversation.")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")
+    
+    args = parser.parse_args()
+
+    # Set random seed for reproducibility
+    np.random.seed(args.seed)
+    random.seed(args.seed)
+    
+    # Generate workload
+    requests = generate_workload(args.lambda_rate, args.simulation_duration, args.new_conv_prob)
+    requests.sort(key=lambda x: x["arrival_time"])
+
+    # Save workload
+    with open("workload.json", "w") as f:
+        json.dump(requests, f, indent=2)
