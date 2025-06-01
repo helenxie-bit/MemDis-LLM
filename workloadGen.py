@@ -64,3 +64,7 @@ def main():
     # Save workload
     with open("workload.json", "w") as f:
         json.dump(requests, f, indent=2)
+
+
+if __name__ == "__main__":
+    main()
