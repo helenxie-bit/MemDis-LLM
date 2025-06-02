@@ -67,6 +67,7 @@ class CausalSelfAttention(nn.Module):
 
         # causal self-attention; Self-attend: (B, nh, T, hs) x (B, nh, hs, total_T) -> (B, nh, T, total_T)
         att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
+        #print(f"att shape: {att.shape}, bias shape: {self.bias.shape}, T: {T}, k.size(-2): {k.size(-2)}")
         att = att.masked_fill(self.bias[:,:,:T,:k.size(-2)] == 0, float('-inf'))
         att = F.softmax(att, dim=-1)
         att = self.attn_dropout(att)
@@ -337,6 +338,7 @@ class GPT(nn.Module):
         request_id=None,
         kv_cache_dir=None,
         device=None,
+        is_old_conversation=False,
     ):
         """
         Take a conditioning sequence of indices idx (LongTensor of shape (b,t)) and complete
@@ -349,6 +351,10 @@ class GPT(nn.Module):
         times = []
         batch_size, seq_len = idx.size()
         total_idx = idx
+
+        # only use the last token for the next prediction for old conversations
+        if is_old_conversation is True:
+            idx = idx[:, -1:]
 
         for token_gen_iter in range(max_new_tokens):
             start_time = time.time()

@@ -15,8 +15,7 @@ from memoryMonitor import get_numastat
 # Configuration
 init_from = "gpt2" # Options: "gpt2", "gpt2-medium", "gpt2-large", "gpt2-xl"
 start = "FILE:data/input.txt" # Prompt to start text generation from (can also specify a file, use as: "FILE:prompt.txt")
-num_requests = 10
-input_tokens = 1000
+input_tokens = 500
 max_new_tokens = 20
 temperature = 0.0 # In order to get deterministic results for reproduction, set temperature to 0.0
 top_k = 200 # Retain only the top k tokens with highest probability (not used if temperature==0.0)
@@ -32,12 +31,15 @@ memory_limit = 1024 # Configure according to your system, here we set it to 1 GB
 memory_threshold = 0.7 # Memory threshold for switching to next tier
 local_node = 0
 remote_node = 1 # NUMA node to allocate on (if using remote memory)
+lambda_rate = 3 # Average number of requests per second
+simulation_duration = 10 # Total duration of the simulation in seconds
+new_conv_prob = 0.7 # Probability of starting a new conversation
 
 exec(open("configurator.py").read()) # Overrides from command line or config file
 
 
-metrics_file = f"results/metrics_{tiered_kv_cache}_{kv_method}.csv" # File to save metrics
-cpu_metrics_file = f"results/cpu_clock_metrics_{tiered_kv_cache}_{kv_method}.csv" # File to save metrics
+metrics_file = f"results/metrics_{tiered_kv_cache}_{kv_method}_{new_conv_prob}.csv" # File to save metrics
+cpu_metrics_file = f"results/cpu_clock_metrics_{tiered_kv_cache}_{kv_method}_{new_conv_prob}.csv" # File to save metrics
 # -----------------------------------------------------------
 if kv_method == "remote-memory":
     numa_bind.set_membind(remote_node)  # Set memory binding to remote NUMA node
@@ -73,6 +75,10 @@ else:
     os.makedirs(kv_cache_dir, exist_ok=True)  # Directory to store KV cache files if using disk
 kv_cache_size_local, kv_cache_size_remote, kv_cache_size_disk = 0, 0, 0
 
+# Generate workload
+requests = generate_workload(lambda_rate, simulation_duration, new_conv_prob)
+requests.sort(key=lambda x: x["arrival_time"])  # Sort requests by arrival time
+
 gen_count = 0
 generation_cycle_times = []
 
@@ -82,12 +88,29 @@ process = psutil.Process(os.getpid())
 init_total_memory = get_numastat(process.pid)["Total_MB"]
 used_local_memory, used_remote_memory = 0, 0
 
+processed_requests = []
+start_time = time.perf_counter() # Reference time
 # Generate text
 with torch.no_grad():
     with ctx:
-        for k in range(num_requests):
+        #for k in range(num_requests):
+        for request in requests:
             # Measuring NUMA performace: we measure wall clock time between each generate() function to see if clock times went down
             gen_start_time = time.perf_counter()
+
+            # Synchronize to match Poisson arrival times
+            now = time.perf_counter()
+            wait_time = request["arrival_time"] - (now - start_time)
+            if wait_time > 0:
+                time.sleep(wait_time)
+            
+            request_id = request["request_id"]
+            if request_id in processed_requests:
+                is_old_conversation = True
+            else:
+                is_old_conversation = False
+                processed_requests.append(request_id)
+            print(f"📌 Request ID: {request_id}, Old Conversation: {is_old_conversation}")
 
             y, updated_kv_cache, metrics = model.generate(
                 x,
@@ -96,13 +119,14 @@ with torch.no_grad():
                 top_k=top_k,
                 kv_method=kv_method,
                 kv_cache=(
-                    total_kv_cache_local.get(k, None) if kv_method == "local-memory"
-                    else total_kv_cache_remote.get(k, None) if kv_method == "remote-memory"
+                    total_kv_cache_local.get(request_id, None) if kv_method == "local-memory"
+                    else total_kv_cache_remote.get(request_id, None) if kv_method == "remote-memory"
                     else None
                 ),
-                request_id=k,
+                request_id=request_id,
                 kv_cache_dir=kv_cache_dir,
                 device=device,
+                is_old_conversation=is_old_conversation,
             )
             # print(decode(y[0].tolist()))
             # print("=" * 40)
@@ -119,14 +143,14 @@ with torch.no_grad():
 
             # Update the dictionary which stores KV cache if using memory method
             if kv_method == "local-memory":
-                total_kv_cache_local[k] = updated_kv_cache
+                total_kv_cache_local[request_id] = updated_kv_cache
                 kv_cache_size_local = sum(
                     keys.element_size() * keys.numel()
                     + values.element_size() * values.numel()
                     for tensor_list in total_kv_cache_local.values()
                     for keys, values in tensor_list
                 ) / (1024 ** 2)  # Convert to MB
-                print(f"Total KV cache size after {k}th request: {kv_cache_size_local:.2f} MB")
+                print(f"Total KV cache size after {request_id}th request: {kv_cache_size_local:.2f} MB")
 
                 curr_total_memory = get_numastat(process.pid)["Total_MB"]
                 used_local_memory = curr_total_memory - init_total_memory
@@ -139,14 +163,14 @@ with torch.no_grad():
                     total_kv_cache_remote = {}  # Initialize remote cache in this case
 
             elif kv_method == "remote-memory":
-                total_kv_cache_remote[k] = updated_kv_cache
+                total_kv_cache_remote[request_id] = updated_kv_cache
                 kv_cache_size_remote = sum(
                     keys.element_size() * keys.numel()
                     + values.element_size() * values.numel()
                     for tensor_list in total_kv_cache_remote.values()
                     for keys, values in tensor_list
                 ) / (1024 ** 2)
-                print(f"Total KV cache size after {k}th request: {kv_cache_size_local + kv_cache_size_remote:.2f} MB")
+                print(f"Total KV cache size after {request_id}th request: {kv_cache_size_local + kv_cache_size_remote:.2f} MB")
 
                 curr_total_memory = get_numastat(process.pid)["Total_MB"]
                 used_remote_memory = curr_total_memory - init_total_memory - used_local_memory
@@ -160,7 +184,7 @@ with torch.no_grad():
 
             else:
                 kv_cache_size_disk = get_dir_size(kv_cache_dir) / (1024 ** 2)  # Convert to MB
-                print(f"Total KV cache size after {k}th request: {kv_cache_size_local + kv_cache_size_remote + kv_cache_size_disk:.2f} MB")
+                print(f"Total KV cache size after {request_id}th request: {kv_cache_size_local + kv_cache_size_remote + kv_cache_size_disk:.2f} MB")
 
             # Save metrics to a DataFrame and a CSV file
             metrics["model"] = init_from
@@ -171,7 +195,7 @@ with torch.no_grad():
 
     cycle_times = pd.DataFrame(generation_cycle_times)
     cycle_times.to_csv(cpu_metrics_file, index=False)
-    print(generation_cycle_times)
+    #print(generation_cycle_times)
 
 # kv-cache cleanup
 if kv_method == "disk" and os.path.isdir(kv_cache_dir) and "kv_cache_disk" in kv_cache_dir:
