@@ -9,6 +9,7 @@ from model import GPT
 from kvDiskSim import get_dir_size
 import numa_bind
 import psutil
+import json
 from memoryMonitor import get_numastat
 
 # -----------------------------------------------------------
@@ -31,15 +32,12 @@ memory_limit = 1024 # Configure according to your system, here we set it to 1 GB
 memory_threshold = 0.7 # Memory threshold for switching to next tier
 local_node = 0
 remote_node = 1 # NUMA node to allocate on (if using remote memory)
-lambda_rate = 3 # Average number of requests per second
-simulation_duration = 10 # Total duration of the simulation in seconds
-new_conv_prob = 0.7 # Probability of starting a new conversation
 
 exec(open("configurator.py").read()) # Overrides from command line or config file
 
 
-metrics_file = f"results/metrics_{tiered_kv_cache}_{kv_method}_{new_conv_prob}.csv" # File to save metrics
-cpu_metrics_file = f"results/cpu_clock_metrics_{tiered_kv_cache}_{kv_method}_{new_conv_prob}.csv" # File to save metrics
+metrics_file = f"results/metrics_{tiered_kv_cache}_{kv_method}.csv" # File to save metrics
+cpu_metrics_file = f"results/cpu_clock_metrics_{tiered_kv_cache}_{kv_method}.csv" # File to save metrics
 # -----------------------------------------------------------
 if kv_method == "remote-memory":
     numa_bind.set_membind(remote_node)  # Set memory binding to remote NUMA node
@@ -75,9 +73,9 @@ else:
     os.makedirs(kv_cache_dir, exist_ok=True)  # Directory to store KV cache files if using disk
 kv_cache_size_local, kv_cache_size_remote, kv_cache_size_disk = 0, 0, 0
 
-# Generate workload
-requests = generate_workload(lambda_rate, simulation_duration, new_conv_prob)
-requests.sort(key=lambda x: x["arrival_time"])  # Sort requests by arrival time
+# Read workload
+with open("workload.json", "r") as f:
+    requests = json.load(f)
 
 gen_count = 0
 generation_cycle_times = []
