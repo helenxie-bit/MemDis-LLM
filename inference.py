@@ -38,8 +38,8 @@ remote_node = 1 # NUMA node to allocate on (if using remote memory)
 # LRU Tiered cache configuration
 lru_local_limit_mb = 1024  # Local memory limit in MB
 lru_remote_limit_mb = 1024  # Remote memory limit in MB
-lru_local_threshold = 0.8  # Local memory threshold for eviction
-lru_remote_threshold = 0.8  # Remote memory threshold for eviction
+lru_local_threshold = 0.7  # Local memory threshold for eviction
+lru_remote_threshold = 0.7  # Remote memory threshold for eviction
 
 exec(open("configurator.py").read()) # Overrides from command line or config file
 
@@ -180,7 +180,7 @@ with torch.no_grad():
                 
                 # Check if memory limit exceeded and remove random entries if tiered_kv_cache is False
                 if not tiered_kv_cache and kv_cache_size_local >= memory_limit * memory_threshold:
-                    print(f"Memory limit exceeded ({kv_cache_size_local:.2f} MB > {memory_limit} MB), removing random entries...")
+                    print(f"Memory limit exceeded, removing random entries...")
                     cache_keys = list(total_kv_cache_local.keys())
                     
                     while kv_cache_size_local >= memory_limit * memory_threshold and cache_keys:
@@ -218,7 +218,7 @@ with torch.no_grad():
                 
                 # Check if memory limit exceeded and remove random entries if tiered_kv_cache is False
                 if not tiered_kv_cache and kv_cache_size_remote >= memory_limit * memory_threshold:
-                    print(f"Memory limit exceeded ({kv_cache_size_remote:.2f} MB > {memory_limit} MB), removing random entries...")
+                    print(f"Memory limit exceeded, removing random entries...")
                     cache_keys = list(total_kv_cache_remote.keys())
                     
                     while kv_cache_size_remote >= memory_limit * memory_threshold and cache_keys:
