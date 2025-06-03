@@ -10,16 +10,16 @@ os.makedirs(output_dir, exist_ok=True)
 
 # CSVs to calculate averages from
 avg_filenames = [
-    "metrics_False_local-memory_0.5.csv",
-    "metrics_False_remote-memory_0.5.csv",
-    "metrics_False_disk_0.5.csv"
+    "metrics_False_local-memory.csv",
+    "metrics_False_remote-memory.csv",
+    "metrics_False_disk.csv"
 ]
 
 # CSVs to compare line plots
 lineplot_files = {
-    "Tiered Memory System": "metrics_True_local-memory_0.5.csv",
-    "LRU Memory System": "metrics_True_tiered-lru_0.5.csv",
-    "Disk Baseline": "metrics_False_disk_0.5.csv"
+    "Tiered Memory System": "metrics_True_local-memory.csv",
+    "LRU Memory System": "metrics_True_tiered-lru.csv",
+    "Disk Baseline": "metrics_False_disk.csv"
 }
 
 # Metrics and labels
@@ -107,13 +107,100 @@ for metric, label_y in metrics.items():
 
     plt.xlabel("Request Index")
     plt.ylabel(label_y)
-    plt.title(f"{label_y} Over 50 Simulated Ticks")
+    plt.title(f"{label_y} Over 25 Simulated Ticks")
     plt.legend()
     plt.grid(True, linestyle=":", linewidth=0.5, alpha=0.7)
     plt.tight_layout()
 
     save_path = os.path.join(output_dir, f"{metric}_line_plot.png")
     plt.savefig(save_path, bbox_inches="tight")
+    plt.show()
+    plt.close()
+
+# --- Comprehensive Line Plots: All Memory Systems Comparison ---
+# Load all datasets for comprehensive comparison
+all_lineplot_files = {
+    "Local Memory Only": "metrics_False_local-memory.csv",
+    "Remote Memory Only": "metrics_False_remote-memory.csv", 
+    "Disk Only": "metrics_False_disk.csv",
+    "Tiered Memory System": "metrics_True_local-memory.csv",
+    "LRU Memory System": "metrics_True_tiered-lru.csv"
+}
+
+df_all_comp = {}
+for label, filename in all_lineplot_files.items():
+    path = os.path.join(results_dir, filename)
+    df = pd.read_csv(path)
+    df.columns = df.columns.str.strip()
+    df_all_comp[label] = df
+
+# Define distinct colors and markers for each system
+system_styles = {
+    "Local Memory Only": {'color': '#2E75B6', 'marker': 'o', 'linestyle': '-', 'linewidth': 2},
+    "Remote Memory Only": {'color': '#C65911', 'marker': '^', 'linestyle': '-', 'linewidth': 2},
+    "Disk Only": {'color': '#A2142F', 'marker': 's', 'linestyle': ':', 'linewidth': 3},
+    "Tiered Memory System": {'color': '#77AC30', 'marker': 'D', 'linestyle': '-', 'linewidth': 2.5},
+    "LRU Memory System": {'color': '#4DBEEE', 'marker': 'x', 'linestyle': '--', 'linewidth': 2.5}
+}
+
+# Plot each metric as comprehensive line plots
+for metric, label_y in metrics.items():
+    plt.figure(figsize=(12, 6))
+    
+    for label_x, df in df_all_comp.items():
+        style = system_styles[label_x]
+        plt.plot(
+            df[metric],
+            label=label_x,
+            marker=style['marker'],
+            linestyle=style['linestyle'],
+            color=style['color'],
+            linewidth=style['linewidth'],
+            markersize=6,
+            alpha=0.8
+        )
+
+    plt.xlabel("Request Index")
+    plt.ylabel(label_y)
+    plt.title(f"{label_y} Comparison Across All Memory Systems")
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.grid(True, linestyle=":", linewidth=0.5, alpha=0.7)
+    plt.tight_layout()
+
+    save_path = os.path.join(output_dir, f"{metric}_all_systems_line_plot.png")
+    plt.savefig(save_path, bbox_inches="tight", dpi=300)
+    plt.show()
+    plt.close()
+
+# Create smoothed version of comprehensive line plots
+window_size_all = 15  # Smaller window for better detail with more lines
+
+for metric, label_y in metrics.items():
+    plt.figure(figsize=(12, 6))
+    
+    for label_x, df in df_all_comp.items():
+        # Apply rolling average smoothing
+        smoothed_data = df[metric].rolling(window=window_size_all, center=True, min_periods=1).mean()
+        style = system_styles[label_x]
+        
+        plt.plot(
+            smoothed_data,
+            label=label_x,
+            linestyle=style['linestyle'],
+            color=style['color'],
+            linewidth=style['linewidth'] + 1,
+            alpha=0.9
+        )
+
+    plt.xlabel("Request Index")
+    plt.ylabel(label_y)
+    plt.title(f"{label_y} Comparison Across All Memory Systems (Smoothed)")
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.grid(True, linestyle=":", linewidth=0.5, alpha=0.7)
+    plt.tight_layout()
+
+    save_path = os.path.join(output_dir, f"{metric}_all_systems_smoothed_line_plot.png")
+    plt.savefig(save_path, bbox_inches="tight", dpi=300)
     plt.show()
     plt.close()
 
@@ -154,7 +241,7 @@ for metric, label_y in metrics.items():
     
     ax1.set_xlabel("Request Index")
     ax1.set_ylabel(label_y)
-    ax1.set_title(f"{label_y} Over 50 Simulated Ticks (Original Data)")
+    ax1.set_title(f"{label_y} Over 25 Simulated Ticks (Original Data)")
     ax1.legend()
     ax1.grid(True, linestyle=":", linewidth=0.5, alpha=0.7)
     
@@ -187,7 +274,7 @@ for metric, label_y in metrics.items():
     
     ax2.set_xlabel("Request Index")
     ax2.set_ylabel(label_y)
-    ax2.set_title(f"{label_y} Over 50 Simulated Ticks (Smoothed - Window Size: {window_size})")
+    ax2.set_title(f"{label_y} Over 25 Simulated Ticks (Smoothed - Window Size: {window_size})")
     ax2.legend()
     ax2.grid(True, linestyle=":", linewidth=0.5, alpha=0.7)
     
@@ -228,7 +315,7 @@ for metric, label_y in metrics.items():
 
     plt.xlabel("Request Index")
     plt.ylabel(label_y)
-    plt.title(f"{label_y} Over 50 Simulated Ticks (Smoothed)")
+    plt.title(f"{label_y} Over 25 Simulated Ticks (Smoothed)")
     plt.legend()
     plt.grid(True, linestyle=":", linewidth=0.5, alpha=0.7)
     plt.tight_layout()
@@ -250,9 +337,9 @@ all_systems_data = {
 
 # Add the basic configurations (from avg_filenames)
 system_names = {
-    "metrics_False_local-memory_0.5.csv": "Local Memory Only",
-    "metrics_False_remote-memory_0.5.csv": "Remote Memory Only", 
-    "metrics_False_disk_0.5.csv": "Disk Only (Baseline)"
+    "metrics_False_local-memory.csv": "Local Memory Only",
+    "metrics_False_remote-memory.csv": "Remote Memory Only", 
+    "metrics_False_disk.csv": "Disk Only (Baseline)"
 }
 
 for filename in avg_filenames:
@@ -267,8 +354,8 @@ for filename in avg_filenames:
 
 # Add the advanced systems (from lineplot_files)
 advanced_systems = {
-    "metrics_True_local-memory_0.5.csv": "Tiered Memory System",
-    "metrics_True_tiered-lru_0.5.csv": "LRU Memory System"
+    "metrics_True_local-memory.csv": "Tiered Memory System",
+    "metrics_True_tiered-lru.csv": "LRU Memory System"
 }
 
 for filename, display_name in advanced_systems.items():
