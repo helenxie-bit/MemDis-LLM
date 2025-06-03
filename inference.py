@@ -5,6 +5,7 @@ import pandas as pd
 import torch
 import tiktoken
 import time
+import random  # Add import for random eviction
 from model import GPT
 from kvDiskSim import get_dir_size
 import numa_bind
@@ -176,6 +177,28 @@ with torch.no_grad():
                     for tensor_list in total_kv_cache_local.values()
                     for keys, values in tensor_list
                 ) / (1024 ** 2)  # Convert to MB
+                
+                # Check if memory limit exceeded and remove random entries if tiered_kv_cache is False
+                if not tiered_kv_cache and kv_cache_size_local >= memory_limit * memory_threshold:
+                    print(f"Memory limit exceeded ({kv_cache_size_local:.2f} MB > {memory_limit} MB), removing random entries...")
+                    cache_keys = list(total_kv_cache_local.keys())
+                    
+                    while kv_cache_size_local >= memory_limit * memory_threshold and cache_keys:
+                        # Randomly select a key to evict
+                        evict_key = random.choice(cache_keys)
+                        cache_keys.remove(evict_key)
+                        
+                        # Remove the entry
+                        del total_kv_cache_local[evict_key]
+                        
+                        # Recalculate cache size
+                        kv_cache_size_local = sum(
+                            keys.element_size() * keys.numel()
+                            + values.element_size() * values.numel()
+                            for tensor_list in total_kv_cache_local.values()
+                            for keys, values in tensor_list
+                        ) / (1024 ** 2)
+                
                 print(f"Total KV cache size after {request_id}th request: {kv_cache_size_local:.2f} MB")
 
                 if tiered_kv_cache == True and kv_cache_size_local >= memory_limit * memory_threshold:
@@ -192,6 +215,28 @@ with torch.no_grad():
                     for tensor_list in total_kv_cache_remote.values()
                     for keys, values in tensor_list
                 ) / (1024 ** 2)
+                
+                # Check if memory limit exceeded and remove random entries if tiered_kv_cache is False
+                if not tiered_kv_cache and kv_cache_size_remote >= memory_limit * memory_threshold:
+                    print(f"Memory limit exceeded ({kv_cache_size_remote:.2f} MB > {memory_limit} MB), removing random entries...")
+                    cache_keys = list(total_kv_cache_remote.keys())
+                    
+                    while kv_cache_size_remote >= memory_limit * memory_threshold and cache_keys:
+                        # Randomly select a key to evict
+                        evict_key = random.choice(cache_keys)
+                        cache_keys.remove(evict_key)
+                        
+                        # Remove the entry
+                        del total_kv_cache_remote[evict_key]
+                        
+                        # Recalculate cache size
+                        kv_cache_size_remote = sum(
+                            keys.element_size() * keys.numel()
+                            + values.element_size() * values.numel()
+                            for tensor_list in total_kv_cache_remote.values()
+                            for keys, values in tensor_list
+                        ) / (1024 ** 2)
+                
                 print(f"Total KV cache size after {request_id}th request: {kv_cache_size_local + kv_cache_size_remote:.2f} MB")
 
                 if tiered_kv_cache ==True and kv_cache_size_remote >= memory_limit * memory_threshold:
