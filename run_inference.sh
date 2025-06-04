@@ -30,4 +30,7 @@ numactl --cpunodebind=0 python inference.py --kv_method=disk
 echo "=== Step 9: Running inference (tiered memory) ==="
 numactl --cpunodebind=0 python inference.py --tiered_kv_cache=True
 
+echo "=== Step 10: Running inference (LRU Eviction) ==="
+numactl --cpunodebind=0 python inference.py --kv_method=tiered-lru --lru_tiered_kv_cache=True
+
 echo "=== All experiments completed ==="
