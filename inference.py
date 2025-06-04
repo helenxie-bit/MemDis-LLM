@@ -12,6 +12,7 @@ import numa_bind
 import psutil
 import json
 from tiered_kv_cache import LRUTieredKVCache
+from memoryMonitor import get_numastat
 
 # -----------------------------------------------------------
 # Configuration
@@ -104,6 +105,9 @@ generation_cycle_times = []
 
 # Get the pid so that the psutil can start monitoring
 process = psutil.Process(os.getpid())
+# Get initial memory usage
+init_total_memory = get_numastat(process.pid)["Total_MB"]
+used_local_memory, used_remote_memory = 0, 0
 
 processed_requests = []
 start_time = time.perf_counter() # Reference time
@@ -201,7 +205,11 @@ with torch.no_grad():
                 
                 print(f"Total KV cache size after {request_id}th request: {kv_cache_size_local:.2f} MB")
 
-                if tiered_kv_cache == True and kv_cache_size_local >= memory_limit * memory_threshold:
+                curr_total_memory = get_numastat(process.pid)["Total_MB"]
+                used_local_memory = curr_total_memory - init_total_memory
+                print(f"Used local memory: {used_local_memory:.2f} MB")
+
+                if tiered_kv_cache == True and used_local_memory >= memory_limit * memory_threshold:
                     print(f"Warning: Memory usage exceeded threshold, switching to remote memory...")
                     kv_method = "remote-memory"
                     numa_bind.set_membind(remote_node)  # Set memory binding to remote NUMA node
@@ -239,7 +247,11 @@ with torch.no_grad():
                 
                 print(f"Total KV cache size after {request_id}th request: {kv_cache_size_local + kv_cache_size_remote:.2f} MB")
 
-                if tiered_kv_cache ==True and kv_cache_size_remote >= memory_limit * memory_threshold:
+                curr_total_memory = get_numastat(process.pid)["Total_MB"]
+                used_remote_memory = curr_total_memory - init_total_memory - used_local_memory
+                print(f"Used remote memory: {used_remote_memory:.2f} MB")
+
+                if tiered_kv_cache ==True and used_remote_memory >= memory_limit * memory_threshold:
                     print(f"Warning: Memory usage exceeded threshold, switching to disk...")
                     kv_method = "disk"
                     numa_bind.set_membind(local_node)  # Set memory binding to local NUMA node
@@ -248,26 +260,6 @@ with torch.no_grad():
             else:
                 kv_cache_size_disk = get_dir_size(kv_cache_dir) / (1024 ** 2)  # Convert to MB
                 print(f"Total KV cache size after {request_id}th request: {kv_cache_size_local + kv_cache_size_remote + kv_cache_size_disk:.2f} MB")
-
-            # --- Code for getting memory usage --- #
-            try:
-                # Get various data on memory usage
-                memory_info = process.memory_info()
-
-                # RSS: the amount the physical memory thjat the process is currently using (amount that is not swapperd to disk)
-                metrics["process_memory_rss_mb"] = memory_info.rss / (1024 * 1024)
-
-               # VMS: Virtual memory, which includes disk swap usage, RAM usage, etc.
-                metrics["process_memory_vms_mb"] = memory_info.vms / (1024 * 1024)
-
-            except psutil.AccessDenied:
-                print(f"Warning: Could not access process memory info (AccessDenied)")
-                metrics["process_memory_rss_mb"] = np.nan
-                # metrics["process_memory_vms_mb"] = np.nan
-                # metrics["process_memory_uss_mb"] = np.nan
-            except Exception as e:
-                print(f"Warning: Could not access process memory info: {e}")
-                metrics["process_memory_rss_mb"] = np.nan
 
             # Save metrics to a DataFrame and a CSV file
             metrics["model"] = init_from
