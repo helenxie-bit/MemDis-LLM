@@ -6,8 +6,6 @@
 
 ## 💼 Project Structure Overview
 
-## 💼 Project Structure Overview
-
 This project is built on top of [NanoGPT](https://github.com/karpathy/nanoGPT) and extends it to support memory disaggregation and tiered KV cache strategies. The codebase is organized as follows:
 
 ### Core Components
@@ -115,7 +113,7 @@ KV cache is placed sequentially across local memory → remote memory → disk a
 numactl --cpunodebind=0 python inference.py --tiered_kv_cache=True
 ```
 
-### 5. Tiered Memory System with LRU
+### 5. Tiered Memory System (with LRU)
 Same as above, but uses Least Recently Used (LRU) policy for eviction and promotion across tiers, keeping frequently accessed cache blocks in faster memory.
 
 ```bash
