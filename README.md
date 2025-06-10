@@ -6,12 +6,12 @@
 
 ## 💼 Project Structure Overview
 
-This project is built on top of [NanoGPT](https://github.com/karpathy/nanoGPT) and extends it to support memory disaggregation and tiered KV cache strategies. The codebase is organized as follows:
+This project is built on top of [nanoGPT](https://github.com/karpathy/nanoGPT) and extends it to support memory disaggregation and tiered KV cache strategies. The codebase is organized as follows:
 
 ### Core Components
 - `workloadGen.py` – Generates synthetic inference workloads to simulate different usage patterns
 - `inference.py` – Main entry point for running GPT-2 inference with configurable memory strategies
-- `tiered_kv_cache.py` – Implements tiered KV cache logic, including LRU-based cache replacement
+- `tiered_kv_cache.py` – Implements tiered KV cache logic with LRU-based cache replacement
 - `model.py` – Handles GPT-2 model loading and token generation
 - `kvDiskSim.py` – Simulates disk-based KV cache storage and retrieval
 - `memoryMonitor.py` – Tracks local and remote memory usage during inference
@@ -52,7 +52,7 @@ Set the following arguments when running inference:
 | `start`                | Prompt input or prompt file path                        | `FILE:data/input.txt` |
 | `input_tokens`         | Max input token length                                  | `500`   |
 | `max_new_tokens`       | Max number of tokens to generate                        | `20`    |
-| `temperature`          | Controls randomness (<1.0 = deterministic)              | `0.0`   |
+| `temperature`          | Controls randomness (<1.0 = less randomness)            | `0.0`   |
 | `top_k`                | Top-k sampling (ignored if temperature = 0)             | `200`   |
 | `kv_method`            | Memory strategy (`local-memory`, `remote-memory`, `disk`, `tiered-lru`) | `local-memory` |
 | `tiered_kv_cache`      | Enable naive tiered cache                               | `False` |
